@@ -105,8 +105,9 @@ async function ask(req) {
       const onGone = (w) => { if (w === winId) done(no, rpcError(4001, "User rejected the request.")); };
       api.runtime.onMessage.addListener(onMsg);
       api.windows.onRemoved.addListener(onGone);
-      // A small window at the top right of the browser window, under the toolbar, as browser wallets do.
-      const W = 400, H = 620;
+      // A window at the top right of the browser window, under the toolbar, as browser wallets do.
+      // Wide and tall enough for the browser's own passkey dialogs (Windows Hello's PIN among them), which open over it.
+      const W = 520, H = 680;
       api.windows.getCurrent().catch(() => null).then((cur) => {
         const left = cur && cur.left != null ? cur.left + Math.max(0, cur.width - W - 12) : Math.round(window.screenX + window.outerWidth - W - 12);
         const top = cur && cur.top != null ? cur.top + 72 : Math.round(window.screenY + 72);

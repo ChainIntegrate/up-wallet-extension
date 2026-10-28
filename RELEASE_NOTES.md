@@ -13,8 +13,8 @@ To update from an earlier version: unzip the new zip over the same folder and pr
 
 1. Press the UP Wallet icon: the wallet opens in the browser's side panel (right click on the icon: "Open UP Wallet in a tab"). Accept the warning.
 2. Settings: choose the network (1) and the UP (2); in **3 · Controller (computer key)** press **Use this computer's key**.
-3. The signing window (a small window at the top right) creates the key: **Create with a passkey** (Windows Hello where Windows supports it, or Google Password Manager), or **Use a password** (at least 12 characters, it cannot be recovered).
+3. The signing window (at the top right) creates the key: **Create with a passkey** (Windows Hello where Windows supports it, or Google Password Manager), or **Use a password** (at least 12 characters, it cannot be recovered).
 4. On the site, [Backup page](https://crosschain-lukso.chainintegrate.it/up-backup.html), **Authorize a device**, with an admin controller (MetaMask): the key's address, as shown in the panel "This computer", once per network.
-5. Back in UP Wallet the check turns green: connect a dApp with WalletConnect. Every signature opens the signing window, which shows what is signed and asks for the passkey or the password. Keep the wallet open (side panel or tab) while a dApp is connected: requests arrive only while it is open.
+5. Back in UP Wallet the check turns green: connect a dApp with WalletConnect. Every signature opens the signing window, which shows what is signed and asks for the passkey or the password. The dApp stays connected with the wallet closed, while the browser runs: a request opens the wallet by itself, in a window at the top right, which takes back the session's network and UP and checks the request as always.
 
 Built from Cross_Chain `{{PAGE}}` and this repository at `{{COMMIT}}`.

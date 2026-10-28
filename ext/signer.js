@@ -152,6 +152,28 @@ function userOpHash(op, chainId) {
 const chainText = (c) => (/^(0x[0-9a-f]+|\d+)$/i.test(String(c)) ? BigInt(c).toString() : oneLine(c, 20));
 const amount = (v, cur) => `${ethers.formatEther(v)} ${cur || ""}`.trim();
 const selector = (data) => (ethers.dataLength(data) ? ethers.dataSlice(data, 0, Math.min(4, ethers.dataLength(data))) : "");
+// What the UP does, from its execute / executeBatch call data: the operation type when it is not a plain call,
+// and each call's recipient, value and function.
+const OPS = ["CALL", "CREATE", "CREATE2", "STATICCALL", "DELEGATECALL"];
+const opName = (o) => OPS[Number(o)] || String(o);
+function upCalls(data, cur) {
+  let d = null;
+  try { d = UP_IFACE.parseTransaction({ data }); } catch (e) { /* not execute / executeBatch */ }
+  if (!d) return [[L("Funzione della UP", "UP function"), selector(data) || "0x"]];
+  if (d.name === "execute") {
+    const [op, to, value, inner] = d.args;
+    return [...(Number(op) ? [[L("Tipo", "Type"), opName(op)]] : []), [L("Verso", "To"), to], [L("Valore", "Value"), amount(value, cur)], [L("Funzione", "Function"), selector(inner) || "—"]];
+  }
+  const [ops, tos, values, datas] = d.args;
+  const MAX = 20;
+  const rows = [[L("Chiamate", "Calls"), L(`${tos.length} in un'operazione`, `${tos.length} in one operation`)]];
+  tos.slice(0, MAX).forEach((to, i) => rows.push([`${i + 1}`, [Number(ops[i]) ? opName(ops[i]) : "", to, amount(values[i], cur), selector(datas[i]) || "—"].filter(Boolean).join(" · ")]));
+  if (tos.length > MAX) rows.push(["…", L(`altre ${tos.length - MAX}`, `${tos.length - MAX} more`)]);
+  return rows;
+}
+// A transaction to the UP's Key Manager: execute(bytes) runs the payload on the UP.
+const KM_IFACE = new ethers.Interface(["function execute(bytes)"]);
+const KM_EXECUTE = KM_IFACE.getFunction("execute").selector;
 
 // Returns { title, rows: [[label, value]], digest, finish(sig) → answer } or throws { code, message }.
 function plan(req, k) {
@@ -180,9 +202,17 @@ function plan(req, k) {
   }
   if (req.kind === "tx") {
     const t = ethers.Transaction.from({ ...req.tx, chainId: BigInt(req.tx.chainId) });
+    let what = [[L("Verso", "To"), t.to || L("(nuovo contratto)", "(new contract)")], [L("Valore", "Value"), amount(t.value, req.net.currency)],
+      [L("Funzione", "Function"), selector(t.data) || L("nessun dato: un semplice invio", "no data: a plain transfer")]];
+    if (t.to && selector(t.data) === KM_EXECUTE) {
+      try {
+        const [payload] = KM_IFACE.decodeFunctionData("execute", t.data);
+        what = [["Key Manager", t.to], [L("Valore", "Value"), amount(t.value, req.net.currency)],
+          [L("Funzione", "Function"), L("execute(bytes): la UP esegue", "execute(bytes): the UP runs")], ...upCalls(payload, req.net.currency)];
+      } catch (e) { /* shown as a plain call */ }
+    }
     return { title: L(`Transazione su ${req.net.name}`, `Transaction on ${req.net.name}`), site: req.site,
-      rows: [[L("Verso", "To"), t.to || L("(nuovo contratto)", "(new contract)")], [L("Valore", "Value"), amount(t.value, req.net.currency)],
-        [L("Funzione", "Function"), selector(t.data) || L("nessun dato: un semplice invio", "no data: a plain transfer")],
+      rows: [...what,
         [L("Gas massimo", "Maximum gas"), amount(t.gasLimit * (t.maxFeePerGas ?? t.gasPrice ?? 0n), req.net.currency)], [L("Rete", "Network"), `${req.net.name} (${t.chainId})`]],
       digest: t.unsignedHash, finish: (sig) => { t.signature = sig; if (t.from !== k.address) throw new Error("signature check failed"); return t.serialized; } };
   }
@@ -194,12 +224,7 @@ function plan(req, k) {
       maxPriorityFeePerGas: BigInt(raw.maxPriorityFeePerGas), paymasterAndData: raw.paymasterAndData };
     for (const x of ["initCode", "callData", "paymasterAndData"]) if (!ethers.isHexString(op[x])) throw rpcError(-32602, "malformed bytes");
     if (!req.up || op.sender !== ethers.getAddress(req.up)) throw rpcError(4100, L("L'operazione non è della UP scelta nella pagina.", "The operation is not of the UP chosen in the page."));
-    let what;
-    try {
-      const d = UP_IFACE.parseTransaction({ data: op.callData });
-      if (d.name === "execute") { const [, to, value, data] = d.args; what = [[L("Verso", "To"), to], [L("Valore", "Value"), amount(value, req.net.currency)], [L("Funzione", "Function"), selector(data) || "—"]]; }
-      else what = [[L("Chiamate", "Calls"), L(`${d.args[1].length} in un'operazione`, `${d.args[1].length} in one operation`)]];
-    } catch (e) { what = [[L("Funzione della UP", "UP function"), selector(op.callData) || "0x"]]; }
+    const what = upCalls(op.callData, req.net.currency);
     const h = userOpHash(op, Number(req.chainId));
     // Extension4337 checks a personal_sign of the operation hash.
     return { title: L(`Operazione della UP su ${req.net.name}`, `Operation of the UP on ${req.net.name}`), site: req.site,

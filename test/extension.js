@@ -123,7 +123,7 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   await p.waitForFunction(() => typeof signerAddress !== "undefined" && signerAddress, null, { timeout: 15000 })
     .catch(async (e) => { console.log("SIGNER:", await signer.evaluate(() => document.body.innerText), "PAGE:", await p.evaluate(() => [document.getElementById("pkPanel").innerText, (document.getElementById("log") || {}).innerText].join(" / ")), errs); throw e; });
   const pos = await p.evaluate(async () => ({ c: window.__lastCreate, w: await chrome.windows.getCurrent() }));
-  ck("the signing window is a small popup at the top right of the browser window, focused", pos.c.type === "popup" && pos.c.width === 400 && pos.c.focused === true && pos.c.left === pos.w.left + pos.w.width - 412 && pos.c.top === pos.w.top + 72, JSON.stringify(pos));
+  ck("the signing window is a small popup at the top right of the browser window, focused", pos.c.type === "popup" && pos.c.width === 520 && pos.c.height === 680 && pos.c.focused === true && pos.c.left === Math.max(0, pos.w.left + Math.max(0, pos.w.width - 532)) && pos.c.top === pos.w.top + 72, JSON.stringify(pos));
   const k1 = await signer.evaluate(async () => (await chrome.storage.local.get("deviceKey")).deviceKey);
   const addr = await p.evaluate(() => signerAddress);
   ck("passkey key: created and stored encrypted (no private key in storage), the page uses its address", k1 && k1.method === "passkey" && ethers.getAddress(k1.address) === ethers.getAddress(addr) && !/^0x[0-9a-f]{64}$/i.test(JSON.stringify(k1)) && k1.ct && k1.credId && k1.prfSalt, JSON.stringify(k1));
@@ -131,6 +131,7 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   ck("the panel shows the address, passkey, and how to authorize it", panel.includes(addr) && /passkey/.test(panel) && /Autorizza un dispositivo/.test(panel), panel);
 
   // ---- signatures
+  let r;
   const ask = (fn, arg) => p.evaluate(fn, arg).then((r) => r, (e) => ({ err: e.message }));
   mark();
   let pr = p.evaluate(async () => { try { return await signerProvider.request({ method: "personal_sign", params: [ethers.hexlify(ethers.toUtf8Bytes("ciao UP")), signerAddress] }); } catch (e) { return { code: e.code }; } });
@@ -158,6 +159,18 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   const t = ethers.Transaction.from(raws[0] || "0x");
   ck("transaction: signed for Base by the computer key and sent raw by the page", raws.length === 1 && t.from === addr && t.chainId === 8453n && t.to === ethers.getAddress(TO) && t.value === 10n ** 16n && t.nonce === 7 && h === ethers.keccak256(raws[0]), JSON.stringify({ h, from: t.from }));
 
+  // a transaction to the UP's Key Manager: execute(bytes) with the UP's executeBatch inside
+  const KM = "0x" + "4b".repeat(20), TO2 = "0x" + "88".repeat(20);
+  const batch = new ethers.Interface(["function executeBatch(uint256[],address[],uint256[],bytes[])"]).encodeFunctionData("executeBatch", [[0, 0], [TO, TO2], [10n ** 16n, 0], ["0x", "0xa9059cbb" + "00".repeat(64)]]);
+  const kmData = new ethers.Interface(["function execute(bytes)"]).encodeFunctionData("execute", [batch]);
+  mark();
+  pr = p.evaluate(async ([KM, data]) => { try { return await signerProvider.request({ method: "eth_sendTransaction", params: [{ from: signerAddress, to: KM, data, chainId: "0x2105", gas: "0x9c40" }] }); } catch (e) { return { code: e.code }; } }, [KM, kmData]);
+  txt = await shown();
+  ck("a transaction to the Key Manager: the window names what the UP does (execute(bytes), each call's recipient, value and function)", /Key Manager/.test(txt) && txt.includes(ethers.getAddress(KM)) && /la UP esegue/.test(txt) && /2 in un'operazione/.test(txt) && txt.includes(ethers.getAddress(TO) + " · 0.01 ETH") && txt.includes(ethers.getAddress(TO2) + " · 0.0 ETH · 0xa9059cbb"), txt);
+  await click("#cancel");
+  r = await pr;
+  ck("rejected: nothing sent", r && r.code === 4001 && raws.length === 1, JSON.stringify(r));
+
   // a gas-relay operation through the page's own client (upwallet_signUserOperation)
   const EP = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
   const upIface = new ethers.Interface(["function execute(uint256,address,uint256,bytes)"]);
@@ -184,7 +197,7 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
 
   // ---- refusals
   const call = (m, params) => p.evaluate(async ([m, params]) => { try { await signerProvider.request({ method: m, params }); return "signed"; } catch (e) { return [e.code, e.message]; } }, [m, params]);
-  let r = await call("personal_sign", [ethers.hexlify(ethers.randomBytes(32)), addr]);
+  r = await call("personal_sign", [ethers.hexlify(ethers.randomBytes(32)), addr]);
   ck("an opaque 32-byte message is refused by the signing window, before any passkey", Array.isArray(r) && r[0] === 4100 && /32 byte/.test(r[1]), JSON.stringify(r));
   r = await call("personal_sign", ["0x01", "0x" + "99".repeat(20)]);
   ck("a signature for another account is refused", Array.isArray(r) && r[0] === 4100, JSON.stringify(r));
@@ -198,6 +211,75 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   await shown(); await click("#cancel");
   r = await pr;
   ck("rejected in the signing window: 4001, as a wallet answers", Array.isArray(r) && r[0] === 4001, JSON.stringify(r));
+
+  // ---- WalletConnect: the extension's client (ext/wc-host.js), with a WalletKit stand-in (no relay in the test).
+  // The offscreen document is a tab here, so the test can drive the stand-in; the service worker's
+  // offscreen.createDocument and windows.create are noted instead.
+  await sw.evaluate(() => {
+    self.__opened = [];
+    chrome.offscreen.createDocument = async () => {};
+    chrome.windows.create = async (o) => { self.__opened.push(o); return { id: -1 }; };
+  });
+  const host = await ctx.newPage();
+  host.on("pageerror", (e) => errs.push("wc-host: " + e.message));
+  await host.addInitScript(() => {
+    const S = { sessions: {}, handlers: {}, calls: [] };
+    S.emit = (n, e) => (S.handlers[n] || []).forEach((f) => f(e));
+    const meta = { name: "Test dApp", url: "https://dapp.example" };
+    const kit = {
+      on(n, f) { (S.handlers[n] = S.handlers[n] || []).push(f); },
+      getActiveSessions() { return S.sessions; },
+      async pair(a) { S.calls.push(["pair", a]); setTimeout(() => S.emit("session_proposal", { id: 11, params: { proposer: { metadata: meta }, requiredNamespaces: {}, optionalNamespaces: { eip155: { chains: ["eip155:42"], methods: ["personal_sign"], events: [] } } }, verifyContext: { verified: { validation: "VALID" } } }), 10); },
+      async approveSession(a) { S.calls.push(["approve", a]); S.sessions.t1 = { topic: "t1", peer: { metadata: meta }, namespaces: a.namespaces }; return S.sessions.t1; },
+      async rejectSession(a) { S.calls.push(["reject", a]); },
+      async respondSessionRequest(a) { S.calls.push(["respond", a]); },
+      async disconnectSession(a) { S.calls.push(["disconnect", a]); delete S.sessions[a.topic]; },
+      async emitSessionEvent(a) { S.calls.push(["emit", a]); },
+    };
+    const fake = { Core: function Core() {}, WalletKit: { init: async () => kit }, getSdkError: (k) => ({ code: 5000, message: k }), buildApprovedNamespaces: () => ({}) };
+    window.__fake = S;
+    Object.defineProperty(window, "WalletKitBundle", { get: () => fake, set() {}, configurable: false });
+  });
+  await host.goto(`chrome-extension://${id}/ext/wc-host.html`);
+  const calls = () => host.evaluate(() => JSON.parse(JSON.stringify(window.__fake.calls)));
+  const until = async (fn, what) => { for (let i = 0; i < 50; i++) { const v = await fn(); if (v) return v; await new Promise((ok) => setTimeout(ok, 100)); } return null; };
+  const wallet = async (q = "") => {
+    const w = await ctx.newPage();
+    w.on("pageerror", (e) => errs.push("wallet: " + e.message));
+    await w.goto(`chrome-extension://${id}/up-wallet.html${q}`);
+    await w.waitForFunction(() => typeof ethers !== "undefined" && document.getElementById("connectSigner"));
+    return w;
+  };
+  const w1 = await wallet();
+  await w1.evaluate(async () => { await getWalletKit(); await walletKit.pair({ uri: "wc:test" }); });
+  const prop = await until(() => w1.evaluate(() => document.getElementById("log").textContent.includes("Richiesta di connessione da: Test dApp (https://dapp.example)")));
+  ck("WalletConnect: the page pairs through the extension's client, and the proposal reaches the page's own handler", prop && (await calls()).some((c) => c[0] === "pair" && c[1].uri === "wc:test"), await w1.evaluate(() => document.getElementById("log").textContent.slice(-600)));
+  const ns = { eip155: { accounts: ["eip155:42:" + UP], chains: ["eip155:42"], methods: ["personal_sign"], events: ["chainChanged", "accountsChanged"] } };
+  const topics = await w1.evaluate(async (ns) => { await walletKit.approveSession({ id: 11, namespaces: ns }); return Object.keys(walletKit.getActiveSessions()); }, ns);
+  const active = await until(() => sw.evaluate(async () => (await chrome.storage.local.get("wcActive")).wcActive));
+  ck("approved: the session is the extension's, seen by the page, and noted for the next browser start", topics.join() === "t1" && active === true, JSON.stringify({ topics, active }));
+  await host.evaluate(() => { window.__fake.emit("session_request", { topic: "t1", id: 21, params: { chainId: "eip155:42", request: { method: "wallet_getCapabilities", params: [] } }, verifyContext: {} });
+    window.__fake.emit("session_request", { topic: "t1", id: 22, params: { chainId: "eip155:42", request: { method: "eth_foo", params: [] } }, verifyContext: {} }); });
+  const answers = await until(async () => { const c = (await calls()).filter((x) => x[0] === "respond"); return c.length >= 2 ? c : null; });
+  ck("a dApp's requests reach the page and its answers go back to the dApp (capabilities answered, an unknown method refused)", answers && answers[0][1].response.id === 21 && answers[0][1].response.result && answers[1][1].response.id === 22 && answers[1][1].response.error.code === 4200, JSON.stringify(answers));
+  // A proposal the page has not answered yet (its check still running) when the wallet closes.
+  await w1.evaluate(() => { window.freshCompliance = () => new Promise(() => {}); });
+  await host.evaluate(() => window.__fake.emit("session_proposal", { id: 12, params: { proposer: { metadata: { name: "Other", url: "https://other.example" } }, requiredNamespaces: {}, optionalNamespaces: {} }, verifyContext: {} }));
+  const shownOther = await until(() => w1.evaluate(() => document.getElementById("log").textContent.includes("Other")));
+  const before = (await calls()).some((x) => x[0] === "reject" && x[1].id === 12);
+  await w1.close();
+  const rej = await until(async () => (await calls()).find((x) => x[0] === "reject" && x[1].id === 12));
+  ck("the wallet closed with a proposal not answered: rejected", shownOther && !before && !!rej, JSON.stringify(await calls()));
+  await host.evaluate(() => window.__fake.emit("session_request", { topic: "t1", id: 23, params: { chainId: "eip155:42", request: { method: "personal_sign", params: ["0x01", "0x00"] } }, verifyContext: {} }));
+  const opened = await until(() => sw.evaluate(() => self.__opened[0]));
+  ck("a request with the wallet closed: the wallet opens by itself in a window at the top right", opened && opened.type === "popup" && /up-wallet\.html\?wc=1$/.test(opened.url) && opened.focused === true && opened.width === 460, JSON.stringify(opened));
+  const w2 = await wallet("?wc=1");
+  const back = await until(() => w2.evaluate((UP) => (document.getElementById("network").value === "lukso" && document.getElementById("upAddress").value === UP && signerAddress ? { up: UP, signer: signerAddress } : null), UP));
+  ck("the wallet opened for the session takes back its network, its UP and this computer's key", back && back.signer === addr, JSON.stringify(back));
+  await w2.close();
+  const rej2 = await until(async () => (await calls()).find((x) => x[0] === "respond" && x[1].response.id === 23));
+  ck("closed before the checks were green: the waiting request is rejected (4001)", rej2 && rej2[1].response.error.code === 4001, JSON.stringify(rej2));
+  await host.close();
 
   // ---- a password key
   mark();

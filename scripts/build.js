@@ -10,6 +10,9 @@
 //   - ext/signer.html with ext/signer.js (bundled, with its own ethers): the signing window, the only place
 //     where the key is opened;
 //   - the WalletConnect metadata names the site instead of the extension's origin;
+//   - ext/wc-host.html with ext/wc-host.js: the WalletConnect client in an offscreen document, which keeps the
+//     dApps' sessions while the wallet is closed; ext/wc-remote.js, loaded after the WalletKit bundle, gives the
+//     page that client instead of its own;
 //   - manifest.json, with the public key that fixes the extension's id: its passkey belongs to that id.
 //
 //   node scripts/build.js                         clones Cross_Chain at the pinned commit into upstream/
@@ -101,6 +104,10 @@ async function main() {
   // of the page; the computer key after config.js, once chains.js and ethers are loaded.
   html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>\n<link rel="stylesheet" href="ext/ext.css">', "theme.js script tag");
   html = replaceOnce(html, '<script src="config.js"></script>', '<script src="config.js"></script>\n<script src="ext/device-key.js"></script>', "config.js script tag");
+  // WalletConnect: the extension's client (ext/wc-host.js) instead of the page's own, right after the bundle.
+  const wk = html.match(/<script src="vendor\/walletkit-1\.6\.0\.min\.js" integrity="(sha384-[^"]+)"><\/script>/);
+  if (!wk) throw new Error("WalletKit script tag not found in the page");
+  html = html.replace(wk[0], wk[0] + '\n<script src="ext/wc-remote.js"></script>');
   html = replaceOnce(html, "const PAGE_COMMIT = null;", `const PAGE_COMMIT = ${JSON.stringify(upstream.commit.slice(0, 7))};`, "PAGE_COMMIT");
   // WalletConnect metadata: dApps are shown the site (its address and icon), not the extension's origin.
   html = replaceOnce(html, "      url: location.origin,\n      icons: [location.origin + \"/favicon.ico\"],",
@@ -126,7 +133,11 @@ async function main() {
   fs.mkdirSync(path.join(OUT, "ext", "icons"), { recursive: true });
   fs.writeFileSync(path.join(OUT, "ext", "ext-shim.js"),
     fs.readFileSync(path.join(ROOT, "ext", "ext-shim.js"), "utf8").replace("__SITE__", site).replace("__PAGE__", PAGE));
-  for (const f of ["background.js", "signer.html", "ext.css"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
+  for (const f of ["background.js", "signer.html", "ext.css", "wc-remote.js"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
+  fs.writeFileSync(path.join(OUT, "ext", "wc-host.js"), fs.readFileSync(path.join(ROOT, "ext", "wc-host.js"), "utf8").replace("__SITE__", site));
+  // The same WalletKit file as the page, with the page's integrity hash.
+  fs.writeFileSync(path.join(OUT, "ext", "wc-host.html"), replaceOnce(fs.readFileSync(path.join(ROOT, "ext", "wc-host.html"), "utf8"),
+    '<script src="../vendor/walletkit-1.6.0.min.js"></script>', `<script src="../vendor/walletkit-1.6.0.min.js" integrity="${wk[1]}"></script>`, "WalletKit script tag in wc-host.html"));
   for (const f of fs.readdirSync(path.join(ROOT, "ext", "icons"))) fs.copyFileSync(path.join(ROOT, "ext", "icons", f), path.join(OUT, "ext", "icons", f));
   await bundle(path.join(ROOT, "ext", "device-key.js"), path.join(OUT, "ext", "device-key.js"));
   await bundle(path.join(ROOT, "ext", "signer.js"), path.join(OUT, "ext", "signer.js"));
@@ -148,7 +159,7 @@ async function main() {
     action: { default_title: "UP Wallet", default_icon: icons },
     background: { service_worker: "ext/background.js" },
     side_panel: { default_path: PAGE },
-    permissions: ["storage", "sidePanel", "contextMenus"],
+    permissions: ["storage", "sidePanel", "contextMenus", "offscreen"],
     host_permissions: [site + "*"],
     content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'; base-uri 'none'; frame-ancestors 'none'" },
     minimum_chrome_version: "121",

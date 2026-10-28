@@ -25,13 +25,13 @@ when the user chooses, as the Android app is. So the key can live in the extensi
 - **The page.** The same UP Wallet page as the site, taken from Cross_Chain at the commit pinned in
   `UPSTREAM.json` and packaged by `scripts/build.js`: ethers bundled (checked against the page's own
   integrity hash), the page's inline scripts moved to files (Manifest V3 runs no inline script; the
-  manifest's policy is `script-src 'self'`), and two additions. The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab. Requests from dApps arrive while the wallet is open, in the panel or in a tab: one at a time.
+  manifest's policy is `script-src 'self'`), and two additions. The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab.
 - **This computer's key** (`ext/device-key.js`): the page's wallet, announced through EIP-6963 as
   "Computer key (UP Wallet)". It prepares transactions (nonce, gas, fees from the network's RPC) and sends
   them; it never holds the key: every signature goes to the signing window. Only read methods reach the
   RPC. Under the page's connect button, the panel "This computer": the key's address, the link to the
   site's Backup page, delete.
-- **The signing window** (`ext/signer.html`, `ext/signer.js`, a small window at the top right of the browser window): the only place where the key is opened. The
+- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs): the only place where the key is opened. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
   - a **passkey**, through WebAuthn's PRF extension (HKDF-SHA256 of the PRF value). The passkey belongs to
@@ -42,8 +42,9 @@ when the user chooses, as the Android app is. So the key can live in the extensi
 
   For each request the window computes what is signed from the request itself, not from the page's words,
   and shows it: the message's text, the typed data's domain and content, the transaction's network,
-  recipient, value, function and maximum gas, the gas-relay operation's recipient, value and function (its
-  hash computed there). It asks for the passkey or the password, decrypts the key, signs, checks the
+  recipient, value, function and maximum gas (through the UP's Key Manager, `execute(bytes)`: what the UP
+  does, each call's recipient, value and function), the gas-relay operation's recipient, value and function
+  (its hash computed there). It asks for the passkey or the password, decrypts the key, signs, checks the
   signature against the stored address and answers with the signature only. It refuses opaque 32-byte
   messages (they could authorize an operation of the UP), another account, another UP's operation and
   EntryPoints other than v0.6.
@@ -54,7 +55,14 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   extension is handled by revoking the key from the same page.
 - **Relay calls** (gas paid by the site) go to the site (`ext/ext-shim.js`); the extension has the site in its
   host permissions, and the relayer and the sponsor service accept the extension's origin.
-- **dApps** connect through WalletConnect, as with the app; they are shown the site's name and icon.
+- **dApps** connect through WalletConnect, as with the app; they are shown the site's name and icon. The
+  WalletConnect client lives in an offscreen document of the extension (`ext/wc-host.html`, `ext/wc-host.js`),
+  not in the page: a dApp stays connected with the wallet closed, while the browser runs (and after a restart
+  of the browser). The page uses that client through `ext/wc-remote.js`, with the same calls as its own, so
+  every proposal and request is still checked and confirmed by the page. A request with the wallet closed
+  opens it by itself, in a window at the top right; the page takes back the session's network and UP and this
+  computer's key, and receives the request once its checks are green. A wallet closed with a request not
+  answered rejects it, as a wallet window does.
 
 Non-custodial throughout: the key is created on the computer, never leaves the extension and has no copy.
 
@@ -95,8 +103,10 @@ it, otherwise Google Password Manager, a phone or a security key), and the passw
 `npm test` (after `npm run build`): the extension in Chromium with a virtual WebAuthn authenticator that
 supports PRF (Chrome DevTools Protocol), the RPCs mocked: the page and its Content-Security-Policy, its
 texts for the computer key, the warning, a passkey key, a personal message, typed data, a transaction, a
-gas-relay operation through the page's own client, the refusals, a rejection, delete, a password key (too
-short, wrong, right). The CI runs it on every push.
+transaction through the Key Manager, a gas-relay operation through the page's own client, the refusals, a
+rejection, WalletConnect through the extension's client (with a stand-in for WalletKit: pairing, a session,
+requests and answers, the wallet opened by a request, the session taken back, rejections when the wallet
+closes), delete, a password key (too short, wrong, right). The CI runs it on every push.
 
 ## The plan
 
