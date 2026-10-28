@@ -35,7 +35,7 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
   - a **passkey**, through WebAuthn's PRF extension (HKDF-SHA256 of the PRF value). The passkey belongs to
-    this extension's id; the user chooses where it lives: Windows Hello (Windows 11 24H2 or later), Google
+    this extension's id; the user chooses where it lives: Windows Hello (an up-to-date Windows 11), Google
     Password Manager, a phone, a security key;
   - or a **password** (at least 12 characters, PBKDF2-SHA256 with 600,000 rounds), the fallback where no
     passkey gives a PRF value.
@@ -84,9 +84,11 @@ address on the UP from the site's Backup page, on each network.
 `spike/passkey-prf/` (Chrome) and `spike/passkey-prf-firefox/` check that a passkey with PRF works from an
 extension's own page. Results (2026-10-28): Chromium 153 with a virtual authenticator, and Chrome 156 on
 Windows 11 with a passkey in Google Password Manager: it works, the PRF value is the same at every unlock.
-With Windows Hello on Windows 11 23H2 the passkey works but gives no PRF value: Windows Hello is reported to
-give PRF values only from 24H2 / 25H2 with the update of February 2026. Hence the choice of passkey, and the
-password fallback.
+With Windows Hello on that computer, then on Windows 11 23H2 without updates since 2024 (Windows Update
+had been blocked), the passkey worked but gave no PRF value; once the updates were installed, Windows Hello
+gave a PRF value too, the same at every unlock. Windows Hello's PRF support came with Windows' updates of
+2026, so an up-to-date Windows is needed. Hence the choice of passkey (Windows Hello where Windows supports
+it, otherwise Google Password Manager, a phone or a security key), and the password fallback.
 
 ## Tests
 
