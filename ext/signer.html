@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UP Wallet — firma / sign</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #11151c; color: #e6e9ef; font-size: 14px; line-height: 1.45; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .site { color: #9aa3b2; font-size: 12.5px; margin-bottom: 10px; overflow-wrap: anywhere; }
+  .row { border-top: 1px solid #2c3442; padding: 8px 0; }
+  .label { color: #9aa3b2; font-size: 12px; }
+  .value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+  .note { color: #c9d0db; }
+  .account { color: #9aa3b2; font-size: 12px; margin-top: 10px; overflow-wrap: anywhere; }
+  label { display: block; margin-top: 10px; font-size: 13px; }
+  input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px; border-radius: 8px; border: 1px solid #2c3442; background: #0b0e13; color: #e6e9ef; font-size: 14px; }
+  .hint { color: #9aa3b2; font-size: 12px; margin-top: 4px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button { font-size: 14px; padding: 10px 14px; border-radius: 8px; border: 0; background: #3b82f6; color: #fff; cursor: pointer; }
+  button.secondary { background: #2c3442; }
+  button.danger { background: #dc2626; }
+  button:disabled { opacity: .5; cursor: default; }
+  .err { margin-top: 12px; padding: 10px; border-radius: 8px; background: #3b1414; color: #fecaca; }
+</style>
+</head>
+<body>
+<h1 id="title"></h1>
+<div class="site" id="site"></div>
+<div id="rows"></div>
+<div class="account" id="account"></div>
+<div id="pwRow" hidden><label for="pw">Password</label><input type="password" id="pw" autocomplete="off"><div class="hint" id="pwHint"></div></div>
+<div id="pw2Row" hidden><label for="pw2">Password (2)</label><input type="password" id="pw2" autocomplete="off"></div>
+<div class="err" id="err" hidden></div>
+<div class="actions" id="actions" hidden>
+  <button type="button" id="sign"></button>
+  <button type="button" id="alt" class="secondary" hidden></button>
+  <button type="button" id="cancel" class="secondary"></button>
+</div>
+<script src="signer.js"></script>
+</body>
+</html>
