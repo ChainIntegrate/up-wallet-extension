@@ -43,14 +43,17 @@ Chrome, Edge or Brave on Windows 11 (Windows Hello set up: fingerprint, face or 
    opens.
 4. Press **1** (create a test passkey, with Windows Hello), then **2** twice (unlock), then "Copy result".
 
-Firefox: `about:debugging` → "This Firefox" → "Load Temporary Add-on…" → `spike/passkey-prf/manifest.json`;
+Firefox: `about:debugging` → "This Firefox" → "Load Temporary Add-on…" →
+`spike/passkey-prf-firefox/manifest.json` (the same test with Firefox's background script and add-on id);
 then the same steps.
 
 The test creates a passkey named "UP Wallet extension test", which can be deleted afterwards (Windows:
 Settings → Accounts → Passkeys; Chrome: Password Manager). It creates no wallet and no key, reads nothing of
-yours and sends nothing anywhere. Tested in Chromium 153 with a virtual authenticator that supports PRF:
-the passkey works from the extension's page (its relying party is the extension's id) and the PRF value is
-the same at every unlock.
+yours and sends nothing anywhere. Tested in Chromium 153 with a virtual authenticator that supports PRF,
+then on Windows 11 with Chrome 156 (2026-10-28): the passkey works from the extension's page (its relying
+party is the extension's id) and the PRF value is the same at every unlock. Chrome offered to save the
+passkey in Google Password Manager (synced to the Google account); "Save another way" offers Windows Hello
+(on this computer only), which the wallet will prefer.
 
 A note for phase 1: the passkey belongs to the extension's id. An unpacked extension's id depends on its
 folder, so the wallet will fix its id (the manifest's `key`), or a reinstall from another folder would not

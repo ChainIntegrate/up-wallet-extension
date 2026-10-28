@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "UP Wallet — passkey PRF test",
+  "name": "UP Wallet \u2014 passkey PRF test",
   "version": "0.0.1",
   "description": "Phase 0 of UP Wallet for the browser: does a passkey with the PRF extension work from an extension's own page? Creates and uses a test passkey only; no wallet, no key.",
-  "action": { "default_title": "Open the passkey PRF test" },
-  "background": { "service_worker": "background.js", "scripts": ["background.js"] },
-  "browser_specific_settings": { "gecko": { "id": "passkey-prf-test@up-wallet-extension.chainintegrate.it", "strict_min_version": "128.0" } }
+  "action": {
+    "default_title": "Open the passkey PRF test"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
 }

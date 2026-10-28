@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UP Wallet — passkey PRF test</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; background: #11151c; color: #e6e9ef; line-height: 1.5; }
+  h1 { font-size: 20px; }
+  .note { background: #1b212b; border: 1px solid #2c3442; border-radius: 8px; padding: 12px; font-size: 14px; }
+  button { font-size: 15px; padding: 10px 14px; margin: 6px 6px 6px 0; border-radius: 8px; border: 0; background: #3b82f6; color: #fff; cursor: pointer; }
+  button.secondary { background: #2c3442; }
+  pre { background: #0b0e13; border: 1px solid #2c3442; border-radius: 8px; padding: 12px; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; min-height: 120px; }
+  .ok { color: #4ade80; } .err { color: #f87171; }
+</style>
+</head>
+<body>
+<h1>UP Wallet — prova passkey (PRF) / passkey (PRF) test</h1>
+<div class="note">
+  <p>Fase 0 dell'estensione UP Wallet. Questa pagina crea una <b>passkey di prova</b> (Windows Hello: impronta, volto o PIN) e controlla se il browser ne ricava un segreto (estensione <b>PRF</b> di WebAuthn) <b>dalla pagina dell'estensione</b>. Non crea wallet né chiavi, non legge i tuoi dati e non manda nulla in rete.</p>
+  <p>Phase 0 of the UP Wallet extension: it creates a <b>test passkey</b> and checks whether the browser derives a secret from it (WebAuthn <b>PRF</b>) <b>from the extension's own page</b>. No wallet, no key, nothing sent anywhere.</p>
+  <p>Passi / Steps: <b>1</b> → <b>2</b> → <b>2</b> di nuovo / again → <b>Copia il risultato</b>, e incollalo in chat. Alla fine puoi cancellare la passkey "UP Wallet extension test" dalle impostazioni di Windows (Account → Passkey) o di Chrome (Gestore password).</p>
+</div>
+<button id="info" class="secondary">0 · Informazioni / Info</button>
+<button id="create">1 · Crea passkey di prova / Create test passkey</button>
+<button id="unlock">2 · Sblocca (PRF) / Unlock (PRF)</button>
+<button id="copy" class="secondary">Copia il risultato / Copy result</button>
+<pre id="out"></pre>
+<script src="test.js"></script>
+</body>
+</html>
