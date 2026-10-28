@@ -105,8 +105,13 @@ async function ask(req) {
       const onGone = (w) => { if (w === winId) done(no, rpcError(4001, "User rejected the request.")); };
       api.runtime.onMessage.addListener(onMsg);
       api.windows.onRemoved.addListener(onGone);
-      const w = Math.round(window.screenX + (window.outerWidth - 460) / 2), t = Math.round(window.screenY + 80);
-      api.windows.create({ url: api.runtime.getURL("ext/signer.html#" + encodeURIComponent(id)), type: "popup", width: 460, height: 640, left: Math.max(0, w), top: Math.max(0, t) })
+      // A small window at the top right of the browser window, under the toolbar, as browser wallets do.
+      const W = 400, H = 620;
+      api.windows.getCurrent().catch(() => null).then((cur) => {
+        const left = cur && cur.left != null ? cur.left + Math.max(0, cur.width - W - 12) : Math.round(window.screenX + window.outerWidth - W - 12);
+        const top = cur && cur.top != null ? cur.top + 72 : Math.round(window.screenY + 72);
+        return api.windows.create({ url: api.runtime.getURL("ext/signer.html#" + encodeURIComponent(id)), type: "popup", width: W, height: H, left: Math.max(0, left), top: Math.max(0, top), focused: true });
+      })
         .then((win) => { winId = win.id; })
         .catch((e) => done(no, rpcError(-32603, e.message)));
     });

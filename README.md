@@ -25,13 +25,13 @@ when the user chooses, as the Android app is. So the key can live in the extensi
 - **The page.** The same UP Wallet page as the site, taken from Cross_Chain at the commit pinned in
   `UPSTREAM.json` and packaged by `scripts/build.js`: ethers bundled (checked against the page's own
   integrity hash), the page's inline scripts moved to files (Manifest V3 runs no inline script; the
-  manifest's policy is `script-src 'self'`), and two additions. The toolbar button opens it in a tab.
+  manifest's policy is `script-src 'self'`), and two additions. The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab. Requests from dApps arrive while the wallet is open, in the panel or in a tab: one at a time.
 - **This computer's key** (`ext/device-key.js`): the page's wallet, announced through EIP-6963 as
   "Computer key (UP Wallet)". It prepares transactions (nonce, gas, fees from the network's RPC) and sends
   them; it never holds the key: every signature goes to the signing window. Only read methods reach the
   RPC. Under the page's connect button, the panel "This computer": the key's address, the link to the
   site's Backup page, delete.
-- **The signing window** (`ext/signer.html`, `ext/signer.js`): the only place where the key is opened. The
+- **The signing window** (`ext/signer.html`, `ext/signer.js`, a small window at the top right of the browser window): the only place where the key is opened. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
   - a **passkey**, through WebAuthn's PRF extension (HKDF-SHA256 of the PRF value). The passkey belongs to

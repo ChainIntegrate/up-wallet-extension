@@ -60,7 +60,7 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   const signerTab = await signer.evaluate(() => new Promise((ok) => chrome.tabs.getCurrent((t) => ok(t.id))));
   await p.evaluate((tabId) => {
     // A query makes each request a new document (a change of the #fragment alone would not reload the page).
-    chrome.windows.create = async ({ url }) => { await chrome.tabs.update(tabId, { url: url.replace("signer.html#", `signer.html?t=${Date.now()}#`) }); return { id: -12345 }; };
+    chrome.windows.create = async (o) => { window.__lastCreate = o; await chrome.tabs.update(tabId, { url: o.url.replace("signer.html#", `signer.html?t=${Date.now()}#`) }); return { id: -12345 }; };
   }, signerTab);
   // Waits for the signing window to show a request, and returns its text.
   // The URL of the request each step waits for: noted before the step starts, so that a request answered at once
@@ -90,6 +90,8 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
     window.dispatchEvent(new Event("eip6963:requestProvider")); setTimeout(() => ok(got), 50);
   }));
   ck("the page loads in the extension, the computer key announced as its only wallet (EIP-6963)", seen.length === 1 && seen[0] === "Computer key (UP Wallet)", JSON.stringify(seen));
+  const sp = await p.evaluate(async () => ({ b: await chrome.sidePanel.getPanelBehavior(), m: chrome.runtime.getManifest() }));
+  ck("the toolbar button opens the wallet in the side panel (side_panel in the manifest, panel behaviour set)", sp.b.openPanelOnActionClick === true && sp.m.side_panel.default_path === "up-wallet.html", JSON.stringify(sp.b));
   ck("no inline script left in the page; nothing refused by the Content-Security-Policy", await p.evaluate(() => [...document.scripts].every((s) => s.src)) && csp.length === 0, csp.join(" | "));
   const v = await p.$eval("#pageVersion", (e) => e.textContent);
   ck("the version line names the page version", /UP Wallet · (versione della pagina|page version) 2026-/.test(v), v);
@@ -110,6 +112,8 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   await click("#sign");
   await p.waitForFunction(() => typeof signerAddress !== "undefined" && signerAddress, null, { timeout: 15000 })
     .catch(async (e) => { console.log("SIGNER:", await signer.evaluate(() => document.body.innerText), "PAGE:", await p.evaluate(() => [document.getElementById("pkPanel").innerText, (document.getElementById("log") || {}).innerText].join(" / ")), errs); throw e; });
+  const pos = await p.evaluate(async () => ({ c: window.__lastCreate, w: await chrome.windows.getCurrent() }));
+  ck("the signing window is a small popup at the top right of the browser window, focused", pos.c.type === "popup" && pos.c.width === 400 && pos.c.focused === true && pos.c.left === pos.w.left + pos.w.width - 412 && pos.c.top === pos.w.top + 72, JSON.stringify(pos));
   const k1 = await signer.evaluate(async () => (await chrome.storage.local.get("deviceKey")).deviceKey);
   const addr = await p.evaluate(() => signerAddress);
   ck("passkey key: created and stored encrypted (no private key in storage), the page uses its address", k1 && k1.method === "passkey" && ethers.getAddress(k1.address) === ethers.getAddress(addr) && !/^0x[0-9a-f]{64}$/i.test(JSON.stringify(k1)) && k1.ct && k1.credId && k1.prfSalt, JSON.stringify(k1));
