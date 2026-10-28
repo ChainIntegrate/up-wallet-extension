@@ -71,6 +71,20 @@ Non-custodial throughout: the key is created on the computer, never leaves the e
 it. A future Chrome Web Store version will have the store's own id, so its users will create a new key and
 authorize it again.
 
+## One key per device, by choice
+
+Each computer (and each phone, with the Android app) has its own key, created there, with no export, no
+import and no copy, not even an encrypted backup file or a synced one. A new computer means a new key and one
+"Authorize a device" from the site's Backup page, signed by an admin controller (MetaMask), once per network.
+That step is deliberate:
+
+- each device is a controller of its own on the UP: a lost or stolen device is revoked alone, the others keep
+  working;
+- a key that never leaves its device cannot be taken from a file, a backup or a sync account, and an
+  encrypted copy cannot be attacked offline;
+- the device keys have no admin permissions, so one of them cannot authorize another: adding a controller
+  always takes an admin controller, by design.
+
 ## Install (before a release: build it yourself)
 
 ```
