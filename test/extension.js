@@ -244,6 +244,8 @@ let named = null;   // the address whose name the mocked UP keeps
   const host = await ctx.newPage();
   host.on("pageerror", (e) => errs.push("wc-host: " + e.message));
   await host.addInitScript(() => {
+    // As in an offscreen document: chrome.runtime only.
+    for (const k of Object.keys(globalThis.chrome || {})) if (k !== "runtime") { try { Object.defineProperty(globalThis.chrome, k, { value: undefined, configurable: true }); } catch (e) { /* kept */ } }
     const S = { sessions: {}, handlers: {}, calls: [] };
     S.emit = (n, e) => (S.handlers[n] || []).forEach((f) => f(e));
     const meta = { name: "Test dApp", url: "https://dapp.example" };
@@ -262,6 +264,8 @@ let named = null;   // the address whose name the mocked UP keeps
     Object.defineProperty(window, "WalletKitBundle", { get: () => fake, set() {}, configurable: false });
   });
   await host.goto(`chrome-extension://${id}/ext/wc-host.html`);
+  const apis = await host.evaluate(() => Object.keys(chrome).filter((k) => chrome[k] !== undefined));
+  ck("the WalletConnect host runs with chrome.runtime only, as an offscreen document", apis.join() === "runtime", apis.join());
   const calls = () => host.evaluate(() => JSON.parse(JSON.stringify(window.__fake.calls)));
   const until = async (fn, what) => { for (let i = 0; i < 50; i++) { const v = await fn(); if (v) return v; await new Promise((ok) => setTimeout(ok, 100)); } return null; };
   const wallet = async (q = "") => {

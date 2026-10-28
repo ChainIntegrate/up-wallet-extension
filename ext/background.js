@@ -43,7 +43,8 @@ api.runtime.onMessage.addListener((m, sender, reply) => {
     ensureHost().then(() => reply({ ok: true }), (e) => reply({ ok: false, error: e.message }));
     return true;
   }
-  if (m.type === "wc-open-wallet") openWallet().catch(() => null);
+  if (m.type === "wc-active") api.storage.local.set({ wcActive: m.active === true }).catch(() => null);
+  else if (m.type === "wc-open-wallet") openWallet().catch(() => null);
   else if (m.type === "wc-idle") api.offscreen.closeDocument().catch(() => null);
 });
 // With sessions kept from before (browser restart, extension update): the client starts again by itself.

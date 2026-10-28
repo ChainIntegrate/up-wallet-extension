@@ -26,7 +26,8 @@
   function changed() {
     const s = sessions();
     for (const p of ports) post(p, { type: "sessions", sessions: s });
-    api.storage.local.set({ wcActive: Object.keys(s).length > 0 }).catch(() => null);
+    // An offscreen document has chrome.runtime only: the service worker keeps the flag.
+    api.runtime.sendMessage({ type: "wc-active", active: Object.keys(s).length > 0 }).catch(() => null);
     idleCheck();
   }
   function post(port, msg) { try { port.postMessage(msg); return true; } catch (e) { return false; } }
