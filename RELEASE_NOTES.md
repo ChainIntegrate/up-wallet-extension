@@ -7,7 +7,7 @@
 3. Open `chrome://extensions`, turn on **Developer mode**, press **Load unpacked** and choose that folder.
 4. Check: **UP Wallet**, version {{VERSION}}, id `bjndlbdefcelfamapgpimaiaboehehek`. Pin it from the puzzle icon.
 
-To update from an earlier version: unzip the new zip over the same folder and press the reload button of UP Wallet on `chrome://extensions`. The key stays (same id). If the wallet was open, close and reopen it; no need to restart the browser. **Never remove the extension to update it**: removing it deletes its key, which has no copy.
+To update from an earlier version: unzip the new zip over the same folder (in Windows' "Extract all", the destination is that folder itself, not a new one inside it), then on `chrome://extensions` press **Load unpacked** again and choose the same folder. The key stays (same id). The reload button alone may keep the old version: check the version on the extension's card, then close and reopen the wallet. **Never remove the extension to update it**: removing it deletes its key, which has no copy.
 
 ### First use
 

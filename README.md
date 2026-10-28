@@ -91,8 +91,9 @@ That step is deliberate:
 From the [releases](https://github.com/ChainIntegrate/up-wallet-extension/releases): download
 `up-wallet-extension-v….zip` (not "Source code"), unzip it into a folder you keep, then in Chrome, Edge or
 Brave `chrome://extensions`, "Developer mode" on, "Load unpacked", that folder. To update, unzip the new
-version over the same folder and press the extension's reload button: the key stays (the id is the same);
-an open wallet is closed and opened again, no browser restart. **Never remove the extension to update it**:
+version over the same folder, then press "Load unpacked" again on the same folder: the key stays (the id is
+the same). The reload button alone may keep the old version (seen on Chrome 156, Windows 11): check the
+version on the extension's card, then close and reopen the wallet. **Never remove the extension to update it**:
 removing it deletes its key, which has no copy.
 
 Or build it yourself:
