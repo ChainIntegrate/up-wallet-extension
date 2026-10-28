@@ -53,7 +53,11 @@ yours and sends nothing anywhere. Tested in Chromium 153 with a virtual authenti
 then on Windows 11 with Chrome 156 (2026-10-28): the passkey works from the extension's page (its relying
 party is the extension's id) and the PRF value is the same at every unlock. Chrome offered to save the
 passkey in Google Password Manager (synced to the Google account); "Save another way" offers Windows Hello
-(on this computer only), which the wallet will prefer.
+(on this computer only). With Windows Hello on that computer (Windows 11 reporting platform version 15,
+that is 22H2 or 23H2) the passkey works but gives no PRF value (`prf.enabled: false`): Windows Hello is
+reported to give PRF values only from 24H2 / 25H2 with the update of February 2026. So the wallet will take
+a passkey with PRF wherever the user keeps it (Windows Hello where Windows supports it, Google Password
+Manager, a phone, a security key), with a password as the fallback.
 
 A note for phase 1: the passkey belongs to the extension's id. An unpacked extension's id depends on its
 folder, so the wallet will fix its id (the manifest's `key`), or a reinstall from another folder would not
