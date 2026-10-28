@@ -11,6 +11,8 @@ const { ethers } = require("ethers");
 const DIST = path.join(__dirname, "..", "dist");
 const res = []; const ck = (n, c, x = "") => res.push(`${c ? "PASS" : "FAIL"} ${n}${c ? "" : "\n      " + String(x).slice(0, 1500)}`);
 const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat(20);
+const GDB = new ethers.Interface(["function getDataBatch(bytes32[]) view returns (bytes[])"]);
+let named = null;   // the address whose name the mocked UP keeps
 
 (async () => {
   const ctx = await chromium.launchPersistentContext("", { channel: "chromium", headless: true, args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`] });
@@ -32,6 +34,15 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
           case "eth_maxPriorityFeePerGas": return ok("0x5f5e100");
           case "eth_getBlockByNumber": return ok({ number: "0x10", hash: "0x" + "ab".repeat(32), parentHash: "0x" + "cd".repeat(32), timestamp: "0x6700", nonce: "0x0000000000000000", difficulty: "0x0", gasLimit: "0x1c9c380", gasUsed: "0x0", miner: "0x" + "00".repeat(20), extraData: "0x", baseFeePerGas: "0x3b9aca00", transactions: [] });
           case "eth_sendRawTransaction": raws.push(x.params[0]); return ok(ethers.keccak256(x.params[0]));
+          case "eth_call": {
+            // The UP's controller names (Backup page): the computer key is "PC di prova" on Base.
+            const c = x.params[0];
+            if (u.host === "base-rpc.publicnode.com" && c.to && c.to.toLowerCase() === UP.toLowerCase() && c.data.startsWith(GDB.getFunction("getDataBatch").selector)) {
+              const keys = GDB.decodeFunctionData("getDataBatch", c.data)[0];
+              return ok(GDB.encodeFunctionResult("getDataBatch", [keys.map((k) => (named && k.toLowerCase() === "0x344e172b69e28979f8df0000" + named.slice(2).toLowerCase() ? ethers.hexlify(ethers.toUtf8Bytes("PC di prova")) : "0x"))]));
+            }
+            return ok("0x");
+          }
           default: return ok("0x");
         }
       };
@@ -129,6 +140,16 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   ck("passkey key: created and stored encrypted (no private key in storage), the page uses its address", k1 && k1.method === "passkey" && ethers.getAddress(k1.address) === ethers.getAddress(addr) && !/^0x[0-9a-f]{64}$/i.test(JSON.stringify(k1)) && k1.ct && k1.credId && k1.prfSalt, JSON.stringify(k1));
   const panel = await p.$eval("#pkPanel", (e) => e.innerText);
   ck("the panel shows the address, passkey, and how to authorize it", panel.includes(addr) && /passkey/.test(panel) && /Autorizza un dispositivo/.test(panel), panel);
+  const link = await p.$eval("#pkPanel a", (e) => e.href);
+  ck("the link to the Backup page names the key, the UP, the network and the kind of device", link.includes("phone=" + addr) && link.includes("up=" + UP) && link.includes("network=base") && link.includes("device=computer"), link);
+  // its name kept on the UP (Backup page), on the page's network
+  await p.waitForFunction(() => /Nessun nome sulla UP su Base/.test(document.getElementById("pkPanel").innerText), null, { timeout: 10000 }).catch(() => null);
+  const unnamed = await p.$eval("#pkPanel", (e) => e.innerText);
+  named = addr;
+  await p.selectOption("#network", "lukso"); await p.selectOption("#network", "base");
+  await p.waitForFunction(() => /Nome sulla UP \(Base\): PC di prova/.test(document.getElementById("pkPanel").innerText), null, { timeout: 10000 }).catch(() => null);
+  const namedTxt = await p.$eval("#pkPanel", (e) => e.innerText);
+  ck("the panel shows the key's name kept on the UP on the page's network, or that it has none", /Nessun nome sulla UP su Base/.test(unnamed) && /Nome sulla UP \(Base\): PC di prova/.test(namedTxt), unnamed + " / " + namedTxt);
 
   // ---- signatures
   let r;

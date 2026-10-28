@@ -32,6 +32,8 @@ const T = {
   copy: () => (en() ? "Copy address" : "Copia indirizzo"),
   copied: () => (en() ? "Copied" : "Copiato"),
   open: () => (en() ? "Open the Backup page" : "Apri la pagina Backup"),
+  named: (name, net) => (en() ? `Name on the UP (${net}): ${name}` : `Nome sulla UP (${net}): ${name}`),
+  unnamed: (net) => (en() ? `No name on the UP on ${net}: it can be given from the Backup page.` : `Nessun nome sulla UP su ${net}: si può dare dalla pagina Backup.`),
   remove: () => (en() ? "Delete the key" : "Elimina la chiave"),
   noSite: () => (en() ? "No network chosen in the page." : "Nessuna rete scelta nella pagina."),
   warnTitle: () => (en() ? "UP Wallet for the browser: experimental wallet" : "UP Wallet per il browser: wallet sperimentale"),
@@ -249,9 +251,26 @@ function showWarning() {
 }
 
 // ---- "This computer", under the page's connect button
+// The key's name on the UP, on the page's network (kept on the UP by the Backup page, backup-check.js).
+let keyName = { k: "", name: null }, nameLoading = "";
+function nameContext() {
+  const n = knownNet(), el = $("upAddress");
+  const up = el && ethers.isAddress(el.value.trim()) ? ethers.getAddress(el.value.trim()) : null;
+  return address && n && up && window.BackupCheck ? { n, up, k: `${n.chainId}:${up}:${address}` } : null;
+}
+async function refreshName() {
+  const c = nameContext();
+  if (!c || keyName.k === c.k || nameLoading === c.k) return;
+  nameLoading = c.k;
+  try {
+    const names = await window.BackupCheck.readNames(rpcFor(c.n), c.up, [address]);
+    keyName = { k: c.k, name: names[address.toLowerCase()] || null };
+  } catch (e) { keyName = { k: "", name: null }; } finally { nameLoading = ""; }
+  if (nameContext() && nameContext().k === keyName.k) renderPanel();
+}
 function backupLink() {
   const q = new URLSearchParams();
-  if (address) q.set("phone", address);
+  if (address) { q.set("phone", address); q.set("device", "computer"); }
   const up = $("upAddress") && $("upAddress").value.trim();
   if (up && ethers.isAddress(up)) q.set("up", ethers.getAddress(up));
   const n = knownNet();
@@ -273,6 +292,9 @@ function renderPanel() {
   add("b", T.title());
   if (!address) { add("div", T.none()); return; }
   add("div", T.addr(address, method)).style.cssText = "font-family:monospace;overflow-wrap:anywhere;margin:4px 0;";
+  const c = nameContext();
+  if (c && keyName.k === c.k) add("div", keyName.name ? T.named(keyName.name, c.n.name) : T.unnamed(c.n.name)).style.cssText = keyName.name ? "font-weight:600;overflow-wrap:anywhere;margin:4px 0;" : "margin:4px 0;";
+  else refreshName();
   add("div", T.authHint());
   const row = add("div"); row.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;";
   const btn = (text, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "secondary small"; b.textContent = text; b.addEventListener("click", fn); row.appendChild(b); return b; };
@@ -302,6 +324,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (el) el.addEventListener("change", changed);
   const rpcEl = $("customRpc");
   if (rpcEl) rpcEl.addEventListener("change", changed);
+  // The key's name follows the page's network and UP.
+  let nameTimer = null;
+  const later = () => { clearTimeout(nameTimer); nameTimer = setTimeout(() => { keyName = { k: "", name: null }; renderPanel(); }, 600); };
+  if (el) el.addEventListener("change", later);
+  const upEl = $("upAddress");
+  if (upEl) upEl.addEventListener("input", later);
+  // Back from the Backup page, where the name may have changed: read again.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") later(); });
   if (!isAcked()) showWarning();
 });
 

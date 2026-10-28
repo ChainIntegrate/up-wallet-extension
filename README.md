@@ -29,8 +29,9 @@ when the user chooses, as the Android app is. So the key can live in the extensi
 - **This computer's key** (`ext/device-key.js`): the page's wallet, announced through EIP-6963 as
   "Computer key (UP Wallet)". It prepares transactions (nonce, gas, fees from the network's RPC) and sends
   them; it never holds the key: every signature goes to the signing window. Only read methods reach the
-  RPC. Under the page's connect button, the panel "This computer": the key's address, the link to the
-  site's Backup page, delete.
+  RPC. Under the page's connect button, the panel "This computer": the key's address, its name kept on the
+  UP on the page's network (given on the site's Backup page), the link to the Backup page (which fills in
+  the key, the UP, the network and "Computer · UP Wallet extension" as the name to start from), delete.
 - **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs): the only place where the key is opened. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
