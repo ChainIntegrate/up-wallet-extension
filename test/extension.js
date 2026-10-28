@@ -93,6 +93,9 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   ck("no inline script left in the page; nothing refused by the Content-Security-Policy", await p.evaluate(() => [...document.scripts].every((s) => s.src)) && csp.length === 0, csp.join(" | "));
   const v = await p.$eval("#pageVersion", (e) => e.textContent);
   ck("the version line names the page version", /UP Wallet · (versione della pagina|page version) 2026-/.test(v), v);
+  const texts = await p.evaluate(() => ({ cls: document.documentElement.classList.contains("computer-key"), p3: document.querySelector('[data-i18n="panel3Title"]').textContent, ready: t("readyToSend"), perms: t("permsNone"), relay: GasRelayClient.text("optionNote", { pm: "PM" }), body: document.body.innerText }));
+  const leftover = (texts.body.replace(/Nessuna affiliazione[^.]*\./, "").match(/.{0,60}(MetaMask|telefono|impronta).{0,60}/g) || []).filter((x) => !/Questo telefono|Autorizza un dispositivo/.test(x));
+  ck("the page's texts name the computer key and the signing window, not MetaMask, the phone or the fingerprint", texts.cls && texts.p3 === "3 · Controller (chiave del computer) e verifica" && /conferma nella finestra di firma/.test(texts.ready) && /Autorizza un dispositivo/.test(texts.perms) && /chiave del computer\) firma un messaggio nella finestra di firma/.test(texts.relay) && leftover.length === 0, JSON.stringify({ ...texts, body: leftover }));
   const warn = await p.evaluate(() => (document.getElementById("pkWarn") || {}).innerText || "");
   ck("first start: the warning (experimental, the maintainer's wallet, can move the funds, no copy)", /wallet sperimentale/.test(warn) && /muoverne i fondi/.test(warn) && /non ha copie/.test(warn), warn);
   await p.click("#pkWarnOk");
@@ -111,7 +114,7 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   const addr = await p.evaluate(() => signerAddress);
   ck("passkey key: created and stored encrypted (no private key in storage), the page uses its address", k1 && k1.method === "passkey" && ethers.getAddress(k1.address) === ethers.getAddress(addr) && !/^0x[0-9a-f]{64}$/i.test(JSON.stringify(k1)) && k1.ct && k1.credId && k1.prfSalt, JSON.stringify(k1));
   const panel = await p.$eval("#pkPanel", (e) => e.innerText);
-  ck("the panel shows the address, passkey, and how to authorize it", panel.includes(addr) && /passkey/.test(panel) && /Autorizza un telefono/.test(panel), panel);
+  ck("the panel shows the address, passkey, and how to authorize it", panel.includes(addr) && /passkey/.test(panel) && /Autorizza un dispositivo/.test(panel), panel);
 
   // ---- signatures
   const ask = (fn, arg) => p.evaluate(fn, arg).then((r) => r, (e) => ({ err: e.message }));

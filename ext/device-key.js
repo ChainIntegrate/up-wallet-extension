@@ -27,8 +27,8 @@ const T = {
   none: () => (en() ? "No key yet: it is created when you press \"Use this computer's key\" (with a passkey, or a password)." : "Nessuna chiave: si crea quando premi \"Usa la chiave del computer\" (con una passkey, o una password)."),
   addr: (a, m) => (en() ? `Computer key: ${a}` : `Chiave del computer: ${a}`) + (m ? ` · ${m}` : ""),
   authHint: () => (en()
-    ? "To use it, authorize it once on each network where the UP exists: the site's Backup page, \"Authorize a phone\" (it works for this computer's key too), signed by an admin controller of the UP (for example in MetaMask). A lost computer or a removed extension is revoked from the same page."
-    : "Per usarla, autorizzala una volta su ogni rete dove esiste la UP: pagina Backup del sito, \"Autorizza un telefono\" (vale anche per la chiave del computer), firmato da un controller amministratore della UP (per esempio in MetaMask). Un computer perso o l'estensione tolta si revocano dalla stessa pagina."),
+    ? "To use it, authorize it once on each network where the UP exists: the site's Backup page, \"Authorize a device\", signed by an admin controller of the UP (for example in MetaMask). A lost computer or a removed extension is revoked from the same page."
+    : "Per usarla, autorizzala una volta su ogni rete dove esiste la UP: pagina Backup del sito, \"Autorizza un dispositivo\", firmato da un controller amministratore della UP (per esempio in MetaMask). Un computer perso o l'estensione tolta si revocano dalla stessa pagina."),
   copy: () => (en() ? "Copy address" : "Copia indirizzo"),
   copied: () => (en() ? "Copied" : "Copiato"),
   open: () => (en() ? "Open the Backup page" : "Apri la pagina Backup"),

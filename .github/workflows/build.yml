@@ -1,0 +1,63 @@
+name: Extension
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # used only by the Release step, on tags
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build from Cross_Chain at the pinned commit
+        env:
+          ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}   # optional: token lists from Alchemy (see scripts/build.js)
+        run: npm run build
+
+      - name: Install Chromium for the tests
+        timeout-minutes: 10
+        run: |
+          npx --yes playwright@1.56.1 install --with-deps chromium
+          npm install --no-save playwright@1.56.1
+
+      # The extension in Chromium with a virtual passkey that supports PRF.
+      - name: Tests
+        timeout-minutes: 5
+        run: npm test
+
+      - name: Zip
+        run: |
+          V=$(node -p "require('./package.json').version")
+          C=$(git rev-parse --short HEAD)
+          NAME="up-wallet-extension-$V-$C"
+          if [ "${{ github.event_name }}" = "release" ]; then NAME="up-wallet-extension-${{ github.event.release.tag_name }}"; fi
+          (cd dist && zip -qr "../$NAME.zip" .)
+          echo "ZIP=$NAME.zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: up-wallet-extension
+          path: ${{ env.ZIP }}
+
+      - name: Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$ZIP" --clobber
