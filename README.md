@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 1, prototype (0.x), not yet released.** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 1 done, prototype (0.x), released on GitHub (0.1.4).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -86,7 +86,14 @@ That step is deliberate:
 - the device keys have no admin permissions, so one of them cannot authorize another: adding a controller
   always takes an admin controller, by design.
 
-## Install (before a release: build it yourself)
+## Install
+
+From the [releases](https://github.com/ChainIntegrate/up-wallet-extension/releases): download
+`up-wallet-extension-v….zip` (not "Source code"), unzip it into a folder you keep, then in Chrome, Edge or
+Brave `chrome://extensions`, "Developer mode" on, "Load unpacked", that folder. To update, unzip the new
+version over the same folder and press the extension's reload button: the key stays (the id is the same).
+
+Or build it yourself:
 
 ```
 npm ci
@@ -94,9 +101,8 @@ npm run build          # clones Cross_Chain at the pinned commit; or CROSS_CHAIN
 ```
 
 Then in Chrome, Edge or Brave: `chrome://extensions`, "Developer mode" on, "Load unpacked", the `dist`
-folder. Each CI run attaches the built zip as an artifact; releases will carry it too (unzip it, then "Load
-unpacked" on the unzipped folder). An unpacked extension does not update by itself: load the new version
-over the old one (the key stays, since the id is the same).
+folder. Each CI run attaches the built zip as an artifact, and each release carries it. An unpacked
+extension does not update by itself.
 
 First use: open the extension (toolbar), accept the warning, choose the network and the UP, press "Use this
 computer's key": the signing window creates the key with a passkey (or a password). Then authorize its
@@ -123,11 +129,22 @@ rejection, WalletConnect through the extension's client (with a stand-in for Wal
 requests and answers, the wallet opened by a request, the session taken back, rejections when the wallet
 closes), delete, a password key (too short, wrong, right). The CI runs it on every push.
 
+## Security review
+
+Not reviewed yet by anyone but the maintainer. The next review of the whole project covers this
+repository entirely: its brief is Cross_Chain's
+[AUDIT.md, section 16](https://github.com/ChainIntegrate/Cross_Chain/blob/main/AUDIT.md#16-scope-of-the-next-review-changes-since-2026-10-26)
+(the key and its storage, the signing window, the provider, WalletConnect in the offscreen document, the
+build). Not a professional audit.
+
 ## The plan
 
 1. **Phase 0: the passkey from the extension.** Done.
-2. **Phase 1: the wallet (this).** Next: the server settings (the extension's origin accepted by the relayer
-   and the sponsor service; WalletConnect), tests on the maintainer's computer, a first release.
+2. **Phase 1: the wallet.** Done (0.1.0 to 0.1.4, 2026-10-28): the server settings (the extension's origin
+   accepted by the relayer and the sponsor service, and by the WalletConnect project), tests on the
+   maintainer's computer (Windows 11, Chrome, Windows Hello), WalletConnect kept alive in an offscreen
+   document, the controller names of the Backup page. Next: the review of the whole project (Cross_Chain
+   `AUDIT.md`, section 16); Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
 3. **Phase 2: no WalletConnect.** The UP offered to dApps in the browser's tabs as an injected wallet
    (EIP-1193, announced through EIP-6963), every request through the same checks and confirmation window.
 
