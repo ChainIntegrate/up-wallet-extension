@@ -99,7 +99,7 @@ async function main() {
 
   // The extension's additions, as in the Android app: the shim right after theme.js, before any other script
   // of the page; the computer key after config.js, once chains.js and ethers are loaded.
-  html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>', "theme.js script tag");
+  html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>\n<link rel="stylesheet" href="ext/ext.css">', "theme.js script tag");
   html = replaceOnce(html, '<script src="config.js"></script>', '<script src="config.js"></script>\n<script src="ext/device-key.js"></script>', "config.js script tag");
   html = replaceOnce(html, "const PAGE_COMMIT = null;", `const PAGE_COMMIT = ${JSON.stringify(upstream.commit.slice(0, 7))};`, "PAGE_COMMIT");
   // WalletConnect metadata: dApps are shown the site (its address and icon), not the extension's origin.
@@ -126,7 +126,7 @@ async function main() {
   fs.mkdirSync(path.join(OUT, "ext", "icons"), { recursive: true });
   fs.writeFileSync(path.join(OUT, "ext", "ext-shim.js"),
     fs.readFileSync(path.join(ROOT, "ext", "ext-shim.js"), "utf8").replace("__SITE__", site).replace("__PAGE__", PAGE));
-  for (const f of ["background.js", "signer.html"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
+  for (const f of ["background.js", "signer.html", "ext.css"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
   for (const f of fs.readdirSync(path.join(ROOT, "ext", "icons"))) fs.copyFileSync(path.join(ROOT, "ext", "icons", f), path.join(OUT, "ext", "icons", f));
   await bundle(path.join(ROOT, "ext", "device-key.js"), path.join(OUT, "ext", "device-key.js"));
   await bundle(path.join(ROOT, "ext", "signer.js"), path.join(OUT, "ext", "signer.js"));

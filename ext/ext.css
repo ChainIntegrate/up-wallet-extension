@@ -1,0 +1,3 @@
+/* UP Wallet extension: the page's differences in the extension. */
+/* The Universal Profile browser extension does not reach an extension's page: its button would only say "not found". */
+html.in-extension #connectUp { display: none; }

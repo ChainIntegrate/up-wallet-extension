@@ -9,6 +9,8 @@
   const PAGE = "__PAGE__";
   document.documentElement.classList.add("in-extension");
   window.__upwalletSite = SITE;
+  // The extension's version, for the version line at the bottom of the page (up-wallet.html, renderVersion).
+  try { window.__upwalletAppVersion = globalThis.chrome.runtime.getManifest().version; } catch (e) { /* not in the extension */ }
 
   const toSite = (u) => SITE + u.replace(/^\.?\//, "");
   const ownFetch = window.fetch.bind(window);

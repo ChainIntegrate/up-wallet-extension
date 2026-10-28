@@ -37,6 +37,7 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
       };
       return r.fulfill({ contentType: "application/json", body: JSON.stringify(Array.isArray(q) ? q.map(one) : one(q)) });
     }
+    if (u.host === "envio.lukso-mainnet.universal.tech") return r.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { search_profiles: [{ id: UP.toLowerCase(), name: "simone", fullName: "Simone" }] } }) });
     if (u.protocol === "chrome-extension:") return r.continue();
     return r.fulfill({ status: 503, body: "" });
   });
@@ -94,7 +95,9 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   ck("the toolbar button opens the wallet in the side panel (side_panel in the manifest, panel behaviour set)", sp.b.openPanelOnActionClick === true && sp.m.side_panel.default_path === "up-wallet.html", JSON.stringify(sp.b));
   ck("no inline script left in the page; nothing refused by the Content-Security-Policy", await p.evaluate(() => [...document.scripts].every((s) => s.src)) && csp.length === 0, csp.join(" | "));
   const v = await p.$eval("#pageVersion", (e) => e.textContent);
-  ck("the version line names the page version", /UP Wallet · (versione della pagina|page version) 2026-/.test(v), v);
+  const ver = JSON.parse(require("fs").readFileSync(path.join(DIST, "manifest.json"), "utf8")).version;
+  ck("the version line names the extension's version, the page's version and its commit", new RegExp(`^UP Wallet · estensione ${ver.replace(/\./g, "\\.")} · pagina \\d+\\.\\d+\\.\\d+ \\(commit [0-9a-f]{7}\\)$`).test(v), v);
+  ck("no \"Read the address from the UP extension\" button (it cannot reach an extension's page)", await p.$eval("#connectUp", (e) => getComputedStyle(e).display === "none"));
   const texts = await p.evaluate(() => ({ cls: document.documentElement.classList.contains("computer-key"), p3: document.querySelector('[data-i18n="panel3Title"]').textContent, ready: t("readyToSend"), perms: t("permsNone"), relay: GasRelayClient.text("optionNote", { pm: "PM" }), body: document.body.innerText }));
   const leftover = (texts.body.replace(/Nessuna affiliazione[^.]*\./, "").match(/.{0,60}(MetaMask|telefono|impronta).{0,60}/g) || []).filter((x) => !/Questo telefono|Autorizza un dispositivo/.test(x));
   ck("the page's texts name the computer key and the signing window, not MetaMask, the phone or the fingerprint", texts.cls && texts.p3 === "3 · Controller (chiave del computer) e verifica" && /conferma nella finestra di firma/.test(texts.ready) && /Autorizza un dispositivo/.test(texts.perms) && /chiave del computer\) firma un messaggio nella finestra di firma/.test(texts.relay) && leftover.length === 0, JSON.stringify({ ...texts, body: leftover }));
@@ -102,6 +105,13 @@ const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat
   ck("first start: the warning (experimental, the maintainer's wallet, can move the funds, no copy)", /wallet sperimentale/.test(warn) && /muoverne i fondi/.test(warn) && /non ha copie/.test(warn), warn);
   await p.click("#pkWarnOk");
 
+  ck("with no network chosen before, the page starts on LUKSO", (await p.$eval("#network", (e) => e.value)) === "lukso");
+  // ---- the UP by name (panel 2)
+  await p.fill("#upAddress", "simo");
+  await p.waitForSelector("#upAddressResults button", { timeout: 5000 });
+  const found = await p.$eval("#upAddressResults", (e) => e.innerText);
+  await p.click("#upAddressResults button");
+  ck("panel 2: a name finds the UP in LUKSO's profile index, and picking it sets the address", /Usa: simone#/.test(found) && (await p.$eval("#upAddress", (e) => e.value)) === UP && (await p.$eval("#upAddressResults", (e) => e.textContent)) === "", found);
   // ---- create with a passkey
   await p.selectOption("#network", "base");
   await p.fill("#upAddress", UP);
