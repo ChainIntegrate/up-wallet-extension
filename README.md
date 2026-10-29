@@ -179,7 +179,10 @@ were found sound ("well engineered"). Two items concern this repository:
    hup.social on LUKSO and Morpho on Base and Arbitrum One; reviewed with the whole project on 2026-10-29
    (Cross_Chain `AUDIT.md`, section 17). Next: Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
 3. **Phase 2: no WalletConnect.** The UP offered to dApps in the browser's tabs as an injected wallet
-   (EIP-1193, announced through EIP-6963), every request through the same checks and confirmation window.
+   (EIP-1193, announced through EIP-6963), every request through the same checks and confirmation window
+   (Cross_Chain's roadmap, step 5). It needs the extension to reach every site, a much wider permission
+   than today's (the site only): to be done only if WalletConnect becomes a real hindrance, with its own
+   review.
 4. **Later: the key signing inside the hardware.** Today the passkey unlocks the key, which is decrypted
    for one signature in the signing window. A passkey signing by itself (P-256, never leaving Windows
    Hello or a security key) needs a contract on the UP that checks such signatures (an ERC-4337 validator,
