@@ -248,6 +248,15 @@ window.addEventListener("beforeunload", () => { if (!answered) api.runtime.sendM
 function el(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
 function showError(e) { const box = $("err"); box.hidden = false; box.textContent = e && e.message ? e.message : String(e); }
 function busy(on) { for (const b of document.querySelectorAll("button")) b.disabled = on; }
+// The buttons answer only a moment after the request is shown, as browsers do in their own prompts: the
+// window opens under the pointer (at the top right, over the side panel), and a second click meant for the
+// page's own button must not press "Sign" here before the request can be read.
+const ARM_MS = 1000;
+function showActions() {
+  busy(true);
+  $("actions").hidden = false;
+  setTimeout(() => { if (!answered) busy(false); }, ARM_MS);
+}
 
 async function main() {
   const req = id ? (await api.storage.session.get("req:" + id))["req:" + id] : null;
@@ -277,7 +286,7 @@ async function main() {
       answer({ result: p.finish(sig) });
     } catch (e) { busy(false); showError(e); }
   };
-  $("actions").hidden = false;
+  showActions();
 }
 
 function showCreate() {
@@ -304,18 +313,18 @@ function showCreate() {
     if ($("pwRow").hidden) { $("pwRow").hidden = false; $("pw2Row").hidden = false; $("pwHint").textContent = L(`Almeno ${MIN_PASSWORD} caratteri. Non si può recuperare.`, `At least ${MIN_PASSWORD} characters. It cannot be recovered.`); $("pw").focus(); return; }
     run("password");
   };
-  $("actions").hidden = false;
+  showActions();
 }
 
 function showRemove(k) {
   $("title").textContent = L("Elimina la chiave di questo computer", "Delete this computer's key");
-  $("rows").append(el("p", k ? L(`Chiave ${k.address}. Non si può recuperare: prima revocala su ogni rete (sito, pagina Backup), altrimenti resta un controller della UP che nessuno può usare.`, `Key ${k.address}. It cannot be recovered: first revoke it on every network (site, Backup page), or it stays a controller of the UP that nobody can use.`) : L("Nessuna chiave.", "No key."), "note"));
+  $("rows").append(el("p", k ? L(`Chiave ${k.address}. Non si può recuperare: prima manda alla UP il suo saldo (pannello "Questo computer", su ogni rete dove ne ha) e revocala su ogni rete (sito, pagina Backup), altrimenti resta un controller della UP che nessuno può usare.`, `Key ${k.address}. It cannot be recovered: first send its balance to the UP (panel "This computer", on every network where it has some) and revoke it on every network (site, Backup page), or it stays a controller of the UP that nobody can use.`) : L("Nessuna chiave.", "No key."), "note"));
   $("sign").textContent = L("Elimina", "Delete");
   $("sign").className = "danger";
   $("cancel").textContent = L("Annulla", "Cancel");
   $("cancel").onclick = () => answer({ error: { code: 4001, message: "User rejected the request." } });
   $("sign").onclick = async () => { await api.storage.local.remove(STORE); answer({ result: true }); };
-  $("actions").hidden = false;
+  showActions();
 }
 
 main().catch((e) => showError(e));

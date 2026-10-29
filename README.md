@@ -31,8 +31,13 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   them; it never holds the key: every signature goes to the signing window. Only read methods reach the
   RPC. Under the page's connect button, the panel "This computer": the key's address, its name kept on the
   UP on the page's network (given on the site's Backup page), the link to the Backup page (which fills in
-  the key, the UP, the network and "Computer · UP Wallet extension" as the name to start from), delete.
-- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs): the only place where the key is opened. The
+  the key, the UP, the network and "Computer · UP Wallet extension" as the name to start from), the key's
+  own balance on that network (the currency it pays gas with when it sends a transaction itself) with
+  "Send the key's balance to the UP" (one plain transfer to the page's UP, the balance minus the transfer's
+  maximum fee, confirmed in the signing window: a key that is lost has no copy, and neither has its
+  balance), delete. At every opening the key connects by itself (it only reads its address), with the
+  last UP used and the network, as a WalletConnect session's own setup does.
+- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs; its buttons answer only a second after the request is shown, so a click meant for the page cannot sign): the only place where the key is opened. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
   - a **passkey**, through WebAuthn's PRF extension (HKDF-SHA256 of the PRF value). The passkey belongs to
@@ -55,7 +60,13 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   funds). Admin operations keep using an external wallet such as MetaMask. A lost computer or a removed
   extension is handled by revoking the key from the same page.
 - **Relay calls** (gas paid by the site) go to the site (`ext/ext-shim.js`); the extension has the site in its
-  host permissions, and the relayer and the sponsor service accept the extension's origin.
+  host permissions, and the relayer and the sponsor service accept the extension's origin. Chrome lets the
+  user limit an extension's "Site access": then the wallet says so at the top, with "Allow", which asks for
+  it again (without it the relay calls fail, blocked by CORS).
+- **In the side panel** (about 400 pixels wide) the page has a compact header (`ext/ext.css`): a smaller
+  banner, the title on one line, the introduction left to panel 0. A click on the browser's notification
+  of a dApp's request brings the wallet back: its tab, or the window that holds the side panel or the
+  wallet's own window.
 - **dApps** connect through WalletConnect, as with the app; they are shown the site's name and icon. The
   WalletConnect client lives in an offscreen document of the extension (`ext/wc-host.html`, `ext/wc-host.js`),
   not in the page: a dApp stays connected with the wallet closed, while the browser runs (and after a restart
@@ -130,7 +141,9 @@ texts for the computer key, the warning, a passkey key, a personal message, type
 transaction through the Key Manager, a gas-relay operation through the page's own client, the refusals, a
 rejection, WalletConnect through the extension's client (with a stand-in for WalletKit: pairing, a session,
 requests and answers, the wallet opened by a request, the session taken back, rejections when the wallet
-closes), delete, a password key (too short, wrong, right). The CI runs it on every push.
+closes), the buttons of the signing window armed after a moment, the key's balance sent to the UP, at every
+opening the last UP, the key and "Only simulation" back, the compact header, the euro prices, the site
+access withheld, delete, a password key (too short, wrong, right). The CI runs it on every push.
 
 ## Security review
 

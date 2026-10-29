@@ -115,7 +115,7 @@
         }
         // This computer's key, if it exists: connecting it asks for nothing (no signature).
         const key = (await api.storage.local.get("deviceKey")).deviceKey;
-        if (key && !page.signerAddress()) document.getElementById("connectSigner").click();
+        if (key && !page.signerAddress() && !window.__upwalletKeyAuto) document.getElementById("connectSigner").click();
       }
       // The session resumes once the page's checks are green: the page then keeps or closes it, as it does
       // with the sessions of a previous visit.

@@ -33,6 +33,11 @@ const T = {
   copied: () => (en() ? "Copied" : "Copiato"),
   open: () => (en() ? "Open the Backup page" : "Apri la pagina Backup"),
   named: (name, net) => (en() ? `Name on the UP (${net}): ${name}` : `Nome sulla UP (${net}): ${name}`),
+  bal: (v, net) => (en() ? `The key's own balance on ${net}: ${v}` : `Saldo della chiave su ${net}: ${v}`),
+  sweep: () => (en() ? "Send the key's balance to the UP" : "Manda il saldo della chiave alla UP"),
+  sweepNoUp: () => (en() ? "Choose the UP in the page first." : "Prima scegli la UP nella pagina."),
+  sweepLow: () => (en() ? "The balance does not cover the transfer's fee." : "Il saldo non copre la commissione del trasferimento."),
+  sweepSent: (h) => (en() ? `Sent to the UP: ${h}` : `Inviato alla UP: ${h}`),
   unnamed: (net) => (en() ? `No name on the UP on ${net}: it can be given from the Backup page.` : `Nessun nome sulla UP su ${net}: si può dare dalla pagina Backup.`),
   remove: () => (en() ? "Delete the key" : "Elimina la chiave"),
   noSite: () => (en() ? "No network chosen in the page." : "Nessuna rete scelta nella pagina."),
@@ -251,6 +256,38 @@ function showWarning() {
 }
 
 // ---- "This computer", under the page's connect button
+// The key's own balance on the page's network (what it pays gas with when it sends a transaction itself),
+// and the transfer of it to the page's UP: the recipient is always that UP, the amount the balance minus the
+// transfer's maximum fee; the signing window shows both, as for every transaction.
+let keyBal = { k: "", wei: null }, balLoading = "", sweepNote = "";
+async function refreshBal() {
+  const n = knownNet();
+  const k = n && address ? `${n.chainId}:${address}` : "";
+  if (!k || keyBal.k === k || balLoading === k) return;
+  balLoading = k;
+  // A failed read is not tried again until the network or the key changes (renderPanel would loop).
+  try { keyBal = { k, wei: await rpcFor(n).getBalance(address) }; } catch (e) { keyBal = { k, wei: null }; } finally { balLoading = ""; }
+  renderPanel();
+}
+async function sweep() {
+  const n = knownNet(), el = $("upAddress");
+  const up = el && ethers.isAddress(el.value.trim()) ? ethers.getAddress(el.value.trim()) : null;
+  if (!n || !up) { sweepNote = T.sweepNoUp(); renderPanel(); return; }
+  const rpc = rpcFor(n);
+  const [bal, f, gas] = await Promise.all([rpc.getBalance(address), rpc.getFeeData(), rpc.estimateGas({ from: address, to: up, value: 1n })]);
+  const gasLimit = (gas * 12n) / 10n;   // the UP's receive() does a little more than a plain transfer
+  const fees = f.maxFeePerGas != null
+    ? { maxFeePerGas: (f.maxFeePerGas * 12n) / 10n, maxPriorityFeePerGas: f.maxPriorityFeePerGas ?? 0n }
+    : { gasPrice: (f.gasPrice * 12n) / 10n };
+  const value = bal - gasLimit * (fees.maxFeePerGas ?? fees.gasPrice);
+  if (value <= 0n) { sweepNote = T.sweepLow(); renderPanel(); return; }
+  const hex = (v) => "0x" + v.toString(16);
+  const tx = { from: address, to: up, value: hex(value), gas: hex(gasLimit), chainId: hex(BigInt(n.chainId)) };
+  if (fees.maxFeePerGas != null) { tx.maxFeePerGas = hex(fees.maxFeePerGas); tx.maxPriorityFeePerGas = hex(fees.maxPriorityFeePerGas); } else tx.gasPrice = hex(fees.gasPrice);
+  try { sweepNote = T.sweepSent(await sendTransaction([tx])); } catch (e) { sweepNote = e.message || String(e); }
+  keyBal = { k: "", wei: null };
+  renderPanel();
+}
 // The key's name on the UP, on the page's network (kept on the UP by the Backup page, backup-check.js).
 let keyName = { k: "", name: null }, nameLoading = "";
 function nameContext() {
@@ -295,6 +332,12 @@ function renderPanel() {
   const c = nameContext();
   if (c && keyName.k === c.k) add("div", keyName.name ? T.named(keyName.name, c.n.name) : T.unnamed(c.n.name)).style.cssText = keyName.name ? "font-weight:600;overflow-wrap:anywhere;margin:4px 0;" : "margin:4px 0;";
   else refreshName();
+  const bn = knownNet();
+  const balK = bn ? `${bn.chainId}:${address}` : "";
+  const balRow = balK && keyBal.k === balK ? keyBal.wei : null;
+  if (balK && keyBal.k !== balK) refreshBal();
+  else if (balRow !== null) add("div", T.bal(`${ethers.formatEther(balRow)} ${bn.currency || ""}`.trim(), bn.name)).style.cssText = "margin:4px 0;";
+  if (sweepNote) add("div", sweepNote).style.cssText = "margin:4px 0;overflow-wrap:anywhere;";
   add("div", T.authHint());
   const row = add("div"); row.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;";
   const btn = (text, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "secondary small"; b.textContent = text; b.addEventListener("click", fn); row.appendChild(b); return b; };
@@ -307,6 +350,9 @@ function renderPanel() {
   link.className = "secondary small"; link.style.alignSelf = "center";
   link.addEventListener("click", () => { link.href = backupLink(); });
   row.appendChild(link);
+  if (balRow !== null && balRow > 0n) {
+    const b = btn(T.sweep(), async () => { b.disabled = true; sweepNote = ""; try { await sweep(); } catch (e) { sweepNote = e.message || String(e); renderPanel(); } });
+  }
   btn(T.remove(), async () => {
     try { await ask({ kind: "remove" }); } catch (e) { return; }
     await status();
@@ -318,6 +364,14 @@ function renderPanel() {
 document.addEventListener("DOMContentLoaded", async () => {
   try { await status(); } catch (e) { /* no key */ }
   renderPanel();
+  // At every opening the key comes back by itself, as the network and the UP do: connecting it only reads its
+  // address (no signature). Not before the warning is accepted.
+  /* global signerAddress */
+  if (address && isAcked() && !(typeof signerAddress !== "undefined" && signerAddress)) {
+    window.__upwalletKeyAuto = true;
+    const b = $("connectSigner");
+    if (b) b.click();
+  }
   new MutationObserver(() => renderPanel()).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
   const changed = async () => { const n = await currentNet(); if (n) emit("chainChanged", "0x" + n.chainId.toString(16)); };
   const el = $("network");
@@ -326,7 +380,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (rpcEl) rpcEl.addEventListener("change", changed);
   // The key's name follows the page's network and UP.
   let nameTimer = null;
-  const later = () => { clearTimeout(nameTimer); nameTimer = setTimeout(() => { keyName = { k: "", name: null }; renderPanel(); }, 600); };
+  const later = () => { clearTimeout(nameTimer); nameTimer = setTimeout(() => { keyName = { k: "", name: null }; keyBal = { k: "", wei: null }; sweepNote = ""; renderPanel(); }, 600); };
   if (el) el.addEventListener("change", later);
   const upEl = $("upAddress");
   if (upEl) upEl.addEventListener("input", later);

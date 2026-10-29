@@ -34,6 +34,7 @@ let named = null;   // the address whose name the mocked UP keeps
           case "eth_maxPriorityFeePerGas": return ok("0x5f5e100");
           case "eth_getBlockByNumber": return ok({ number: "0x10", hash: "0x" + "ab".repeat(32), parentHash: "0x" + "cd".repeat(32), timestamp: "0x6700", nonce: "0x0000000000000000", difficulty: "0x0", gasLimit: "0x1c9c380", gasUsed: "0x0", miner: "0x" + "00".repeat(20), extraData: "0x", baseFeePerGas: "0x3b9aca00", transactions: [] });
           case "eth_sendRawTransaction": raws.push(x.params[0]); return ok(ethers.keccak256(x.params[0]));
+          case "eth_getBalance": return ok(u.host === "base-rpc.publicnode.com" ? "0x2386f26fc10000" : "0x0");   // 0.01 ETH on Base
           case "eth_call": {
             // The UP's controller names (Backup page): the computer key is "PC di prova" on Base.
             const c = x.params[0];
@@ -157,6 +158,8 @@ let named = null;   // the address whose name the mocked UP keeps
   mark();
   let pr = p.evaluate(async () => { try { return await signerProvider.request({ method: "personal_sign", params: [ethers.hexlify(ethers.toUtf8Bytes("ciao UP")), signerAddress] }); } catch (e) { return { code: e.code }; } });
   txt = await shown();
+  const armed = await signer.evaluate(() => [document.getElementById("sign").disabled, document.getElementById("cancel").disabled]);
+  ck("the signing window's buttons answer only a moment after the request is shown (a click meant for the page cannot sign)", armed[0] === true && armed[1] === true, JSON.stringify(armed));
   ck("personal_sign: the window shows the message text and the key", /Firma di un messaggio/.test(txt) && /ciao UP/.test(txt) && txt.includes(addr), txt);
   await click("#sign");
   let sig = await pr;
@@ -215,6 +218,46 @@ let named = null;   // the address whose name the mocked UP keeps
   await click("#sign");
   const relay = await pr;
   ck("gas relay: the operation hash computed in the signing window, personal_sign by the computer key", ethers.isHexString(relay.sig, 65) && ethers.verifyMessage(ethers.getBytes(H), relay.sig) === addr, JSON.stringify(relay));
+
+  // ---- the key's own balance, sent to the UP
+  await p.waitForFunction(() => /Saldo della chiave su Base: 0\.01 ETH/.test(document.getElementById("pkPanel").innerText), null, { timeout: 10000 }).catch(() => null);
+  const balTxt = await p.$eval("#pkPanel", (e) => e.innerText);
+  ck("the panel shows the key's own balance on the page's network, and the button that sends it to the UP", /Saldo della chiave su Base: 0\.01 ETH/.test(balTxt) && /Manda il saldo della chiave alla UP/.test(balTxt), balTxt);
+  mark();
+  await p.evaluate(() => [...document.querySelectorAll("#pkPanel button")].find((b) => /Manda il saldo/.test(b.textContent)).click());
+  txt = await shown();
+  ck("sending the balance: the signing window shows a plain transfer to the UP", /Transazione su Base/.test(txt) && txt.includes(UP) && /un semplice invio/.test(txt), txt);
+  await click("#sign");
+  await p.waitForFunction(() => /Inviato alla UP: 0x[0-9a-f]{64}/.test(document.getElementById("pkPanel").innerText), null, { timeout: 15000 }).catch(() => null);
+  const swept = raws.length >= 2 ? ethers.Transaction.from(raws[raws.length - 1]) : null;
+  const maxFee = swept ? (swept.maxFeePerGas ?? swept.gasPrice) : 0n;
+  ck("sent: to the page's UP, the balance minus the transfer's maximum fee, signed by the computer key", swept && swept.to === UP && swept.from === addr && swept.value + swept.gasLimit * maxFee === 10n ** 16n && swept.value > 0n, swept ? JSON.stringify({ to: swept.to, value: String(swept.value), gas: String(swept.gasLimit), fee: String(maxFee) }) : "no transaction");
+
+  // ---- at every opening: the last UP, the computer key and "Only simulation" come back; the compact header
+  await p.evaluate(() => { const c = document.getElementById("simulateOnly"); c.checked = false; c.dispatchEvent(new Event("change", { bubbles: true })); });
+  const p3 = await ctx.newPage();
+  p3.on("pageerror", (e) => errs.push("page3: " + e.message));
+  await p3.setViewportSize({ width: 400, height: 900 });
+  await p3.goto(`chrome-extension://${id}/up-wallet.html`);
+  await p3.waitForFunction(() => typeof signerAddress !== "undefined" && signerAddress, null, { timeout: 15000 }).catch(() => null);
+  const back3 = await p3.evaluate(() => ({ up: document.getElementById("upAddress").value, net: document.getElementById("network").value, signer: typeof signerAddress !== "undefined" ? signerAddress : null, sim: document.getElementById("simulateOnly").checked }));
+  ck("at every opening: the last UP, the network, the computer key (no signature) and the \"Only simulation\" choice come back", back3.up === UP && back3.net === "base" && back3.signer === addr && back3.sim === false, JSON.stringify(back3));
+  await p3.evaluate(() => { const c = document.getElementById("simulateOnly"); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); });
+  const head = await p3.evaluate(() => ({ sub: getComputedStyle(document.querySelector(".subtitle")).display, banner: document.querySelector(".brand-logo").getBoundingClientRect().height, card: document.getElementById("upCard").getBoundingClientRect().top, focus: typeof window.__upwalletFocus }));
+  ck("side panel: a compact header (the banner smaller, no introduction), the UP's card in the first screen; the notification's click can bring the wallet back", head.sub === "none" && head.banner > 30 && head.banner <= 64 && head.card < 300 && head.focus === "function", JSON.stringify(head));
+  await p3.screenshot({ path: process.env.SHOT || require("os").tmpdir() + "/up-wallet-panel.png" });
+  const eur = await p3.evaluate(() => [eurToken(42161, "0x0c06cCF38114ddfc35e07427B9424adcca9F44F8", "EURe"), eurToken(42161, "0x0c06cCF38114ddfc35e07427B9424adcca9F44F8", "EURX"), eurToken(42161, "0x" + "11".repeat(20), "EURe"), UsdPrice.tokenUsd("10", { price: 108000000n, decimals: 8 })]);
+  ck("euro stablecoins: recognised by address and symbol together, priced at the EUR / USD rate", eur[0] === true && eur[1] === false && eur[2] === false && Math.abs(eur[3] - 10.8) < 1e-9, JSON.stringify(eur));
+  await p3.close();
+  // Chrome's "Site access" limited: the wallet says so, with a button that asks for it
+  const p4 = await ctx.newPage();
+  p4.on("pageerror", (e) => errs.push("page4: " + e.message));
+  await p4.addInitScript(() => { chrome.permissions.contains = async () => false; });
+  await p4.goto(`chrome-extension://${id}/up-wallet.html`);
+  await p4.waitForSelector("#siteAccess", { timeout: 10000 }).catch(() => null);
+  const acc = await p4.evaluate(() => (document.getElementById("siteAccess") || {}).innerText || "");
+  ck("site access withheld by Chrome: the wallet says so, with a button that asks for it", /Accesso ai siti/.test(acc) && /Consenti/.test(acc), acc);
+  await p4.close();
 
   // ---- refusals
   const call = (m, params) => p.evaluate(async ([m, params]) => { try { await signerProvider.request({ method: m, params }); return "signed"; } catch (e) { return [e.code, e.message]; } }, [m, params]);

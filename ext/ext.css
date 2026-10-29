@@ -1,3 +1,12 @@
 /* UP Wallet extension: the page's differences in the extension. */
 /* The Universal Profile browser extension does not reach an extension's page: its button would only say "not found". */
 html.in-extension #connectUp { display: none; }
+/* The side panel is narrow (about 400 pixels): a compact header, so the UP's card is in the first screen.
+   The banner stays, smaller; the title on one line with the theme and language buttons; the introduction is
+   in panel 0 ("What it is"). */
+html.in-extension .brand-row { margin-bottom: 10px; }
+html.in-extension .brand-logo { width: auto; max-width: 100%; height: 64px; object-fit: contain; object-position: left center; }
+html.in-extension .top-row { align-items: center; margin-bottom: 12px; }
+html.in-extension h1 { font-size: 17px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.in-extension .subtitle { display: none; }
+html.in-extension body { padding-top: 12px; padding-left: 14px; padding-right: 14px; }
