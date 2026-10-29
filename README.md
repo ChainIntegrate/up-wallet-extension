@@ -147,11 +147,21 @@ access withheld, delete, a password key (too short, wrong, right). The CI runs i
 
 ## Security review
 
-Not reviewed yet by anyone but the maintainer. The next review of the whole project covers this
-repository entirely: its brief is Cross_Chain's
-[AUDIT.md, section 16](https://github.com/ChainIntegrate/Cross_Chain/blob/main/AUDIT.md#16-scope-of-the-next-review-changes-since-2026-10-26)
-(the key and its storage, the signing window, the provider, WalletConnect in the offscreen document, the
-build). Not a professional audit.
+Reviewed in the external AI-assisted review of the whole project of 2026-10-29 (Cross_Chain's
+[AUDIT.md, section 17](https://github.com/ChainIntegrate/Cross_Chain/blob/main/AUDIT.md#17-rev-14--external-review-of-the-whole-system-with-the-browser-extension-2026-10-29)),
+this repository at `e6f06a7` (0.1.7), read from scratch: **not a professional audit, but an in-depth one.**
+No Critical, High or Medium. The key handling, the signing window, the provider, the isolation and the build
+were found sound ("well engineered"). Two items concern this repository:
+
+- **EXT-1 (Low, accepted): the password is the weaker way.** With a password, the encrypted key and its
+  salt are in the browser profile: whoever copies the profile can try passwords offline (PBKDF2-SHA256 with
+  600,000 rounds and at least 12 characters raise the cost, but do not stop a weak password). The password
+  is only the fallback for a computer whose passkeys give no PRF value. **Use a passkey**: Windows Hello on
+  an up-to-date Windows 11 (the maintainer's setup), or Google Password Manager; its secret never leaves
+  the authenticator. If you must use a password, make it long and unique.
+- **EXT-2 (Info, accepted): the id is fixed by a public key in this repository**, so anyone can build a
+  package with the same id. Chrome installs only what you load, and the passkey and the stored key belong
+  to your installed copy: install only the zip of this repository's releases.
 
 ## The plan
 
