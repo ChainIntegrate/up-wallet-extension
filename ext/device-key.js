@@ -380,12 +380,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (rpcEl) rpcEl.addEventListener("change", changed);
   // The key's name follows the page's network and UP.
   let nameTimer = null;
-  const later = () => { clearTimeout(nameTimer); nameTimer = setTimeout(() => { keyName = { k: "", name: null }; keyBal = { k: "", wei: null }; sweepNote = ""; renderPanel(); }, 600); };
-  if (el) el.addEventListener("change", later);
+  const later = (changedSetup) => { clearTimeout(nameTimer); nameTimer = setTimeout(() => { keyName = { k: "", name: null }; keyBal = { k: "", wei: null }; if (changedSetup) sweepNote = ""; renderPanel(); }, 600); };
+  if (el) el.addEventListener("change", () => later(true));
   const upEl = $("upAddress");
-  if (upEl) upEl.addEventListener("input", later);
-  // Back from the Backup page, where the name may have changed: read again.
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") later(); });
+  if (upEl) upEl.addEventListener("input", () => later(true));
+  // Back from the Backup page, where the name may have changed, or after a transfer: read again.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") later(false); });
   if (!isAcked()) showWarning();
 });
 
