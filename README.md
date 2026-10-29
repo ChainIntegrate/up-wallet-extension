@@ -25,7 +25,9 @@ when the user chooses, as the Android app is. So the key can live in the extensi
 - **The page.** The same UP Wallet page as the site, taken from Cross_Chain at the commit pinned in
   `UPSTREAM.json` and packaged by `scripts/build.js`: ethers bundled (checked against the page's own
   integrity hash), the page's inline scripts moved to files (Manifest V3 runs no inline script; the
-  manifest's policy is `script-src 'self'`), and two additions. The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab.
+  manifest's policy is `script-src 'self'`), and the extension's own files, described below: the computer
+  key (`ext/device-key.js`), the signing window, the WalletConnect client and the page's link to it, the
+  relay calls to the site (`ext/ext-shim.js`) and the side panel's look (`ext/ext.css`). The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab.
 - **This computer's key** (`ext/device-key.js`): the page's wallet, announced through EIP-6963 as
   "Computer key (UP Wallet)". It prepares transactions (nonce, gas, fees from the network's RPC) and sends
   them; it never holds the key: every signature goes to the signing window. Only read methods reach the
@@ -169,10 +171,16 @@ were found sound ("well engineered"). Two items concern this repository:
 2. **Phase 1: the wallet.** Done (0.1.0 to 0.1.7, 2026-10-28 and 29): the server settings (the extension's origin
    accepted by the relayer and the sponsor service, and by the WalletConnect project), tests on the
    maintainer's computer (Windows 11, Chrome, Windows Hello), WalletConnect kept alive in an offscreen
-   document, the controller names of the Backup page. Next: the review of the whole project (Cross_Chain
-   `AUDIT.md`, section 16); Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
+   document, the controller names of the Backup page, the key's balance sent to the UP; used live with
+   hup.social on LUKSO and Morpho on Base and Arbitrum One; reviewed with the whole project on 2026-10-29
+   (Cross_Chain `AUDIT.md`, section 17). Next: Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
 3. **Phase 2: no WalletConnect.** The UP offered to dApps in the browser's tabs as an injected wallet
    (EIP-1193, announced through EIP-6963), every request through the same checks and confirmation window.
+4. **Later: the key signing inside the hardware.** Today the passkey unlocks the key, which is decrypted
+   for one signature in the signing window. A passkey signing by itself (P-256, never leaving Windows
+   Hello or a security key) needs a contract on the UP that checks such signatures (an ERC-4337 validator,
+   since the Key Manager checks Ethereum signatures only) and a professional audit: Cross_Chain's roadmap,
+   step 8.
 
 ## License
 
