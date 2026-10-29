@@ -3,12 +3,12 @@
 ### Install
 
 1. Download **`up-wallet-extension-{{TAG}}.zip`** below (not "Source code").
-2. Unzip it into a folder you will keep (Chrome loads the extension from there). The folder must contain `manifest.json` and `up-wallet.html` directly.
+2. Unzip it into a folder you will keep for good, for example `Documents\UP-Wallet-Extension`, **not Downloads**: Chrome runs the extension from that folder, and a clean-up of Downloads would stop it. The folder must contain `manifest.json` and `up-wallet.html` directly.
 3. Open `chrome://extensions`, turn on **Developer mode**, press **Load unpacked** and choose that folder.
 4. Check: **UP Wallet**, version {{VERSION}}, id `bjndlbdefcelfamapgpimaiaboehehek`. Pin it from the puzzle icon.
 5. In the extension's **Details**, **Site access** must allow `crosschain-lukso.chainintegrate.it` (the gas paid by the site goes through it). If Chrome limits it, the wallet says so at the top, with **Allow**.
 
-To update from an earlier version: unzip the new zip over the same folder (in Windows' "Extract all", the destination is that folder itself, not a new one inside it), then on `chrome://extensions` press **Load unpacked** again and choose the same folder. The key stays (same id). The reload button alone may keep the old version: check the version on the extension's card, then close and reopen the wallet. **Never remove the extension to update it**: removing it deletes its key, which has no copy.
+To update from an earlier version: unzip the new zip over the same folder (in Windows' "Extract all", the destination is that folder itself, not a new one inside it), then on `chrome://extensions` press **Load unpacked** again and choose the same folder. The key stays (same id). The reload button alone may keep the old version: check the version on the extension's card, then close and reopen the wallet. **Never remove the extension to update it**: removing it deletes its key, which has no copy. If the folder was deleted by mistake, do not press "Remove" on the error: unzip the same version again into the same folder and press **Load unpacked** on it; the key, kept by the browser, is there again.
 
 ### First use
 
