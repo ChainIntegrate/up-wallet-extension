@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 1 done, prototype (0.x), released on GitHub (0.1.7).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 1 done, prototype (0.x), released on GitHub (0.1.8).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -177,7 +177,9 @@ were found sound ("well engineered"). Two items concern this repository:
    maintainer's computer (Windows 11, Chrome, Windows Hello), WalletConnect kept alive in an offscreen
    document, the controller names of the Backup page, the key's balance sent to the UP; used live with
    hup.social on LUKSO and Morpho on Base and Arbitrum One; reviewed with the whole project on 2026-10-29
-   (Cross_Chain `AUDIT.md`, section 17). Next: Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
+   (Cross_Chain `AUDIT.md`, section 17). Then 0.1.8 (2026-11-01): page 0.13.0 (ChainIntegrate's
+   Traceability Registry and the contracts verified on LUKSO decoded, contacts for sends with the
+   address-poisoning warning, the site relayer checked before a request). Next: Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
 3. **Phase 2: no WalletConnect.** The UP offered to dApps in the browser's tabs as an injected wallet
    (EIP-1193, announced through EIP-6963), every request through the same checks and confirmation window
    (Cross_Chain's roadmap, step 5). It needs the extension to reach every site, a much wider permission
