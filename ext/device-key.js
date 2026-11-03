@@ -32,6 +32,11 @@ const T = {
   copy: () => (en() ? "Copy address" : "Copia indirizzo"),
   copied: () => (en() ? "Copied" : "Copiato"),
   open: () => (en() ? "Open the Backup page" : "Apri la pagina Backup"),
+  // On LUKSO the key is authorized with LUKSO's own wallet (the Universal Profile extension or app), no MetaMask.
+  openLukso: () => (en() ? "Authorize on LUKSO (with LUKSO's wallet)" : "Autorizza su LUKSO (con il wallet di LUKSO)"),
+  authHintLukso: () => (en()
+    ? "To use it on LUKSO, authorize it once with LUKSO's own wallet (the Universal Profile extension, or the Universal Profiles app): the button below opens the page, with this key's address filled in. A lost computer or a removed extension is revoked from the same page. On the other networks: the site's Backup page."
+    : "Per usarla su LUKSO, autorizzala una volta con il wallet di LUKSO (l'estensione Universal Profile, o l'app Universal Profiles): il pulsante qui sotto apre la pagina, con l'indirizzo di questa chiave già scritto. Un computer perso o l'estensione tolta si revocano dalla stessa pagina. Sulle altre reti: pagina Backup del sito."),
   named: (name, net) => (en() ? `Name on the UP (${net}): ${name}` : `Nome sulla UP (${net}): ${name}`),
   bal: (v, net) => (en() ? `The key's own balance on ${net}: ${v}` : `Saldo della chiave su ${net}: ${v}`),
   sweep: () => (en() ? "Send the key's balance to the UP" : "Manda il saldo della chiave alla UP"),
@@ -305,12 +310,20 @@ async function refreshName() {
   } catch (e) { keyName = { k: "", name: null }; } finally { nameLoading = ""; }
   if (nameContext() && nameContext().k === keyName.k) renderPanel();
 }
+// On LUKSO, the page that authorizes the key with LUKSO's own wallet (it takes the UP from that wallet);
+// elsewhere, the Backup page (signed in MetaMask).
+const onLukso = () => { const n = knownNet(); return !!n && (n.key === "lukso" || n.key === "lukso-testnet"); };
 function backupLink() {
   const q = new URLSearchParams();
+  const n = knownNet();
+  if (onLukso()) {
+    q.set("network", n.key);
+    if (address) { q.set("phone", address); q.set("device", "computer"); }
+    return `${SITE}up-authorize-lukso.html?${q}`;
+  }
   if (address) { q.set("phone", address); q.set("device", "computer"); }
   const up = $("upAddress") && $("upAddress").value.trim();
   if (up && ethers.isAddress(up)) q.set("up", ethers.getAddress(up));
-  const n = knownNet();
   if (n) q.set("network", n.key);
   return `${SITE}up-backup.html?${q}`;
 }
@@ -338,7 +351,7 @@ function renderPanel() {
   if (balK && keyBal.k !== balK) refreshBal();
   else if (balRow !== null) add("div", T.bal(`${ethers.formatEther(balRow)} ${bn.currency || ""}`.trim(), bn.name)).style.cssText = "margin:4px 0;";
   if (sweepNote) add("div", sweepNote).style.cssText = "margin:4px 0;overflow-wrap:anywhere;";
-  add("div", T.authHint());
+  add("div", onLukso() ? T.authHintLukso() : T.authHint());
   const row = add("div"); row.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;";
   const btn = (text, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "secondary small"; b.textContent = text; b.addEventListener("click", fn); row.appendChild(b); return b; };
   const copy = btn(T.copy(), async () => {
@@ -346,7 +359,7 @@ function renderPanel() {
     copy.textContent = T.copied(); setTimeout(() => { copy.textContent = T.copy(); }, 1500);
   });
   const link = document.createElement("a");
-  link.href = backupLink(); link.target = "_blank"; link.rel = "noopener"; link.textContent = T.open();
+  link.href = backupLink(); link.target = "_blank"; link.rel = "noopener"; link.textContent = onLukso() ? T.openLukso() : T.open();
   link.className = "secondary small"; link.style.alignSelf = "center";
   link.addEventListener("click", () => { link.href = backupLink(); });
   row.appendChild(link);

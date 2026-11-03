@@ -39,7 +39,7 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   maximum fee, confirmed in the signing window: a key that is lost has no copy, and neither has its
   balance), delete. At every opening the key connects by itself (it only reads its address), with the
   last UP used and the network, as a WalletConnect session's own setup does.
-- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs; its buttons answer only a second after the request is shown, so a click meant for the page cannot sign): the only place where the key is opened. The
+- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs; its buttons answer only a second after the request is shown, so a click meant for the page cannot sign): the only place where the key is opened. What a request signs, and what the window shows of it, is computed by `ext/sign-plan.js`, which has no browser code: the Android app's signing window uses the same file. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
   - a **passkey**, through WebAuthn's PRF extension (HKDF-SHA256 of the PRF value). The passkey belongs to
@@ -102,15 +102,17 @@ That step is deliberate:
 ## Install
 
 From the [releases](https://github.com/ChainIntegrate/up-wallet-extension/releases): download
-`up-wallet-extension-v….zip` (not "Source code"), unzip it into a folder you keep for good (for example
-`Documents\UP-Wallet-Extension`, not Downloads: Chrome runs the extension from that folder), then in Chrome, Edge or
-Brave `chrome://extensions`, "Developer mode" on, "Load unpacked", that folder. To update, unzip the new
-version over the same folder, then press "Load unpacked" again on the same folder: the key stays (the id is
-the same). The reload button alone may keep the old version (seen on Chrome 156, Windows 11): check the
+`up-wallet-extension-v….zip` (not "Source code") and extract it into Documents: it holds one folder,
+`UP-Wallet-Extension` (from 0.1.9; before, the files were loose in the zip). Keep it for good, not in Downloads:
+Chrome runs the extension from that folder. Then in Chrome, Edge or Brave `chrome://extensions`, "Developer
+mode" on, "Load unpacked": the dialog shows only folders; click once on `UP-Wallet-Extension` and press
+"Select" (the same on Windows, Mac and Linux). To update, copy everything inside the new zip's
+`UP-Wallet-Extension` folder into the folder the extension already runs from (replace the files), then press
+"Load unpacked" again on that same folder: the key stays (the id is the same). The reload button alone may keep the old version (seen on Chrome 156, Windows 11): check the
 version on the extension's card, then close and reopen the wallet. **Never remove the extension to update it**:
 removing it deletes its key, which has no copy. The key is kept by the browser with the extension, not in
 the folder: if the folder is deleted, the extension stops working (a loading error), but do not press
-"Remove" on it; unzip the same version again into the same folder and press "Load unpacked" on it, and the
+"Remove" on it; put the same version back into the same folder and press "Load unpacked" on it, and the
 key is there again.
 
 Or build it yourself:

@@ -48,7 +48,9 @@ jobs:
           C=$(git rev-parse --short HEAD)
           NAME="up-wallet-extension-$V-$C"
           if [ "${{ github.event_name }}" = "release" ]; then NAME="up-wallet-extension-${{ github.event.release.tag_name }}"; fi
-          (cd dist && zip -qr "../$NAME.zip" .)
+          # One folder inside the zip (UP-Wallet-Extension), so extracting it never scatters files.
+          rm -rf pkg && mkdir pkg && cp -r dist pkg/UP-Wallet-Extension
+          (cd pkg && zip -qr "../$NAME.zip" UP-Wallet-Extension)
           echo "ZIP=$NAME.zip" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4

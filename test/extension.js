@@ -143,6 +143,12 @@ let named = null;   // the address whose name the mocked UP keeps
   ck("the panel shows the address, passkey, and how to authorize it", panel.includes(addr) && /passkey/.test(panel) && /Autorizza un dispositivo/.test(panel), panel);
   const link = await p.$eval("#pkPanel a", (e) => e.href);
   ck("the link to the Backup page names the key, the UP, the network and the kind of device", link.includes("phone=" + addr) && link.includes("up=" + UP) && link.includes("network=base") && link.includes("device=computer"), link);
+  // On LUKSO: the page that authorizes the key with LUKSO's own wallet, with the key and the network.
+  await p.selectOption("#network", "lukso");
+  await p.waitForFunction(() => /up-authorize-lukso/.test((document.querySelector("#pkPanel a") || {}).href || ""), null, { timeout: 10000 }).catch(() => null);
+  const lk = await p.$eval("#pkPanel a", (e) => [e.href, e.textContent]), lkPanel = await p.$eval("#pkPanel", (e) => e.innerText);
+  ck("on LUKSO the panel links the LUKSO authorization page (key, network, device), said so", /\/up-authorize-lukso\.html\?/.test(lk[0]) && lk[0].includes("phone=" + addr) && lk[0].includes("network=lukso") && lk[0].includes("device=computer") && !lk[0].includes("up=") && /Autorizza su LUKSO/.test(lk[1]) && /wallet di LUKSO/.test(lkPanel), JSON.stringify(lk) + lkPanel);
+  await p.selectOption("#network", "base");
   // its name kept on the UP (Backup page), on the page's network
   await p.waitForFunction(() => /Nessun nome sulla UP su Base/.test(document.getElementById("pkPanel").innerText), null, { timeout: 10000 }).catch(() => null);
   const unnamed = await p.$eval("#pkPanel", (e) => e.innerText);
