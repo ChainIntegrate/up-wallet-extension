@@ -64,6 +64,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" "$ZIP" --clobber
+          # The same file under a fixed name: .../releases/latest/download/up-wallet-extension.zip never changes.
+          cp "$ZIP" "$RUNNER_TEMP/up-wallet-extension.zip"
+          gh release upload "${{ github.event.release.tag_name }}" "$RUNNER_TEMP/up-wallet-extension.zip" --clobber
           # The release's description: install and first-use steps, from RELEASE_NOTES.md.
           sed -e "s/{{TAG}}/${{ github.event.release.tag_name }}/g" \
               -e "s/{{VERSION}}/$(node -p "require('./package.json').version")/g" \
