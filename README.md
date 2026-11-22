@@ -30,7 +30,7 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   relay calls to the site (`ext/ext-shim.js`) and the side panel's look (`ext/ext.css`). The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab.
 - **This computer's key** (`ext/device-key.js`): the page's wallet, announced through EIP-6963 as
   "Computer key (UP Wallet)". It prepares transactions (nonce, gas, fees from the network's RPC) and sends
-  them; it never holds the key: every signature goes to the signing window. Only read methods reach the
+  them; it does not hold the key: every signature goes to the signing window. Only read methods reach the
   RPC. Under the page's connect button, the panel "This computer": the key's address, its name kept on the
   UP on the page's network (given on the site's Backup page), the link to the Backup page (which fills in
   the key, the UP, the network and "Computer · UP Wallet extension" as the name to start from), the key's
@@ -39,7 +39,7 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   maximum fee, confirmed in the signing window: a key that is lost has no copy, and neither has its
   balance), delete. At every opening the key connects by itself (it only reads its address), with the
   last UP used and the network, as a WalletConnect session's own setup does.
-- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs; its buttons answer only a second after the request is shown, so a click meant for the page cannot sign): the only place where the key is opened. What a request signs, and what the window shows of it, is computed by `ext/sign-plan.js`, which has no browser code: the Android app's signing window uses the same file. The
+- **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs; its buttons answer only a second after the request is shown, so a click meant for the page cannot sign): the only place where the code opens the key. What a request signs, and what the window shows of it, is computed by `ext/sign-plan.js`, which has no browser code: the Android app's signing window uses the same file. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
   - a **passkey**, through WebAuthn's PRF extension (HKDF-SHA256 of the PRF value). The passkey belongs to
@@ -47,6 +47,10 @@ when the user chooses, as the Android app is. So the key can live in the extensi
     Password Manager, a phone, a security key;
   - or a **password** (at least 12 characters, PBKDF2-SHA256 with 600,000 rounds), the fallback where no
     passkey gives a PRF value.
+
+  **Today the separation between the page and the signing window is a rule of the code, not a boundary the
+  browser enforces** (the 2026-11-04 review, EXT-01): every script the page loads must be trusted as much as
+  the key. Making it a browser boundary is the next structural change (the plan, phase 2).
 
   For each request the window computes what is signed from the request itself, not from the page's words,
   and shows it: the message's text, the typed data's domain and content, the transaction's network,
@@ -159,7 +163,8 @@ Reviewed in the external AI-assisted review of the whole project of 2026-10-29 (
 [AUDIT.md, section 17](https://github.com/ChainIntegrate/Cross_Chain/blob/main/AUDIT.md#17-rev-14--external-review-of-the-whole-system-with-the-browser-extension-2026-10-29)),
 this repository at `e6f06a7` (0.1.7), read from scratch: **not a professional audit, but an in-depth one.**
 No Critical, High or Medium. The key handling, the signing window, the provider, the isolation and the build
-were found sound ("well engineered"). Two items concern this repository:
+were found sound ("well engineered"). The review of 2026-11-04, after 0.1.9 (`audits/2026-11-04-review.md`),
+qualifies the isolation: see EXT-01 above and the plan. Two items of 2026-10-29 concern this repository:
 
 - **EXT-1 (Low, accepted): the password is the weaker way.** With a password, the encrypted key and its
   salt are in the browser profile: whoever copies the profile can try passwords offline (PBKDF2-SHA256 with
@@ -185,11 +190,12 @@ were found sound ("well engineered"). Two items concern this repository:
    0.14.0 (ChainIntegrate's Supplier Trust Registry decoded), the panel "This computer" linking to the
    LUKSO authorization page on LUKSO, one folder in the zip, the signing logic in `ext/sign-plan.js`
    (shared with the Android app's signing window). Next: Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
-3. **Phase 2: no WalletConnect.** The UP offered to dApps in the browser's tabs as an injected wallet
-   (EIP-1193, announced through EIP-6963), every request through the same checks and confirmation window
-   (Cross_Chain's roadmap, step 5). It needs the extension to reach every site, a much wider permission
-   than today's (the site only): to be done only if WalletConnect becomes a real hindrance, with its own
-   review.
+3. **Phase 2: no WalletConnect** (decided on 2026-11-22). The UP offered to dApps in the browser's tabs as an
+   injected wallet (EIP-1193, announced through EIP-6963), every request through the same checks and
+   confirmation window (Cross_Chain's roadmap, step 5). First a discovery test (`spike/eip6963-discovery/`):
+   whether the dApps in use list it. If they do, one release: the signing window isolated from the rest by
+   the browser (EXT-01), the provider on the sites the user connects only (permission granted site by site),
+   WalletConnect removed from the extension (the Android app keeps it); then the two-provider review.
 4. **Later: the key signing inside the hardware.** Today the passkey unlocks the key, which is decrypted
    for one signature in the signing window. A passkey signing by itself (P-256, never leaving Windows
    Hello or a security key) needs a contract on the UP that checks such signatures (an ERC-4337 validator,
