@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "UP Wallet discovery test",
+  "version": "0.0.1",
+  "description": "Test only: announces a wallet to dApps through EIP-6963, to see where it appears. No key, cannot sign or send anything.",
+  "icons": { "48": "icon-48.png" },
+  "content_scripts": [
+    { "matches": ["https://*/*"], "js": ["provider.js"], "world": "MAIN", "run_at": "document_start", "all_frames": false }
+  ]
+}
