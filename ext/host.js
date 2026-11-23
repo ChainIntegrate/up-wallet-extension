@@ -12,6 +12,8 @@
 //     request what is signed, shows it, and asks for the passkey or the password: the only place where the key
 //     is opened. One request at a time;
 //   - "relay": the site's relay service (gas paid by the site), on its known paths only;
+//   - "rpc": a JSON-RPC call to one of the few network RPCs that answer the site but not a sandboxed page
+//     (origin "null"; checked on 2026-11-23): only those URLs, POST only (RPC_PROXY, set by scripts/build.js);
 //   - "focus": bringing the wallet to the front.
 // Anything else is refused. The page's state comes to it at start in the frame's URL fragment (it has no storage
 // of its own). Kept small on purpose: everything here is trusted with the key.
@@ -19,6 +21,7 @@
   "use strict";
   const api = globalThis.chrome;
   const SITE = "__SITE__";   // filled in by scripts/build.js from ext-config.json
+  const RPC_PROXY = new Set(__RPC_PROXY__);   // filled in by scripts/build.js
   const PAGE = "up-wallet.html";
   const KINDS = new Set(["create", "remove", "message", "typed", "tx", "userop"]);
   const RELAY = /^relay\/(info|send|receipt|sponsor\/(check|sign|email))(\?hash=0x[0-9a-fA-F]{64})?$/;
@@ -109,6 +112,12 @@
         if (method === "POST" && !str(a.body, MAX_BODY)) throw fail(-32602, "bad body");
         const r = await fetch(SITE + a.path, { method, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer",
           headers: method === "POST" ? { "content-type": "application/json" } : {}, body: method === "POST" ? a.body : undefined });
+        const body = await r.text();
+        return { status: r.status, body: body.length > MAX_ANSWER ? "" : body };
+      }
+      case "rpc": {
+        if (!a || !RPC_PROXY.has(a.url) || !str(a.body, MAX_BODY)) throw fail(-32602, "not a proxied RPC");
+        const r = await fetch(a.url, { method: "POST", cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", headers: { "content-type": "application/json" }, body: a.body });
         const body = await r.text();
         return { status: r.status, body: body.length > MAX_ANSWER ? "" : body };
       }

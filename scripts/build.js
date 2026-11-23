@@ -37,6 +37,10 @@ const FILES = [PAGE, "theme.js", "chains.js", "asset-list.js", "usd-price.js", "
   "gas-relay-client.js", "call-decode.js", "abi-decode.js",
   "vendor/qrcode-generator-1.4.4.js", "banner.png", "logo.png", "favicon.ico"];
 const DIRS = ["chain-logos"];
+// Network RPCs that answer the site but not a sandboxed page (origin "null"), checked on 2026-11-23 against every
+// RPC in chains.js: the wallet page's calls to them go through the host (ext/host.js, "rpc"), which may reach
+// them (host_permissions).
+const RPC_PROXY = ["https://api.roninchain.com/rpc"];
 const ETHERS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js";
 const ETHERS_LOCAL = "vendor/ethers-6.13.4.umd.min.js";
 
@@ -133,10 +137,10 @@ async function main() {
 
   fs.mkdirSync(path.join(OUT, "ext", "icons"), { recursive: true });
   fs.writeFileSync(path.join(OUT, "ext", "ext-shim.js"),
-    fs.readFileSync(path.join(ROOT, "ext", "ext-shim.js"), "utf8").replace("__SITE__", site).replace("__PAGE__", PAGE));
+    fs.readFileSync(path.join(ROOT, "ext", "ext-shim.js"), "utf8").replace("__SITE__", site).replace("__PAGE__", PAGE).replace("__RPC_PROXY__", JSON.stringify(RPC_PROXY)));
   for (const f of ["background.js", "signer.html", "ext.css", "sandbox-shim.js"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
   // The host: the privileged page that holds the sandboxed wallet page.
-  fs.writeFileSync(path.join(OUT, "ext", "host.js"), fs.readFileSync(path.join(ROOT, "ext", "host.js"), "utf8").replace("__SITE__", site));
+  fs.writeFileSync(path.join(OUT, "ext", "host.js"), fs.readFileSync(path.join(ROOT, "ext", "host.js"), "utf8").replace("__SITE__", site).replace("__RPC_PROXY__", JSON.stringify(RPC_PROXY)));
   fs.copyFileSync(path.join(ROOT, "ext", "wallet.html"), path.join(OUT, HOST));
   for (const f of fs.readdirSync(path.join(ROOT, "ext", "icons"))) fs.copyFileSync(path.join(ROOT, "ext", "icons", f), path.join(OUT, "ext", "icons", f));
   await bundle(path.join(ROOT, "ext", "device-key.js"), path.join(OUT, "ext", "device-key.js"));
@@ -160,7 +164,7 @@ async function main() {
     background: { service_worker: "ext/background.js" },
     side_panel: { default_path: HOST },
     permissions: ["storage", "sidePanel", "contextMenus"],
-    host_permissions: [site + "*"],
+    host_permissions: [site + "*", ...RPC_PROXY.map((u) => new URL(u).origin + "/*")],
     // The wallet page: sandboxed (opaque origin, no chrome.* API), only framed by the host, its scripts only the
     // extension's own files. Popups (links to the site and explorers) open outside the sandbox.
     sandbox: { pages: [PAGE] },

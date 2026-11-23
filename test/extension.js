@@ -21,7 +21,7 @@ let named = null;   // the address whose name the mocked UP keeps
   const errs = [], csp = [], raws = [];
   // The wallet page is sandboxed (origin "null"): the RPCs answer it as they answer any site, with CORS.
   const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" };
-  const relayOrigins = [];
+  const relayOrigins = [], roninFrames = [];
   await ctx.route("**/*", (r) => {
     const u = new URL(r.request().url());
     if (r.request().method() === "OPTIONS") return r.fulfill({ status: 204, headers: CORS, body: "" });
@@ -53,6 +53,8 @@ let named = null;   // the address whose name the mocked UP keeps
       };
       return r.fulfill({ contentType: "application/json", headers: CORS, body: JSON.stringify(Array.isArray(q) ? q.map(one) : one(q)) });
     }
+    // Ronin's RPC answers the site but not a sandboxed page (no CORS for origin "null"): reached by the host.
+    if (u.host === "api.roninchain.com") { roninFrames.push((r.request().frame() && r.request().frame().url()) || "?"); const q = JSON.parse(r.request().postData() || "{}"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: q.id, result: "0x7e4" }) }); }
     // The site's relay: reached only by the host (the extension's origin), for the wallet page.
     if (u.host === "crosschain-lukso.chainintegrate.it" && u.pathname === "/relay/info") { relayOrigins.push((r.request().frame() && r.request().frame().url()) || "?"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ test: "relay-info" }) }); }
     if (u.host === "envio.lukso-mainnet.universal.tech") return r.fulfill({ contentType: "application/json", headers: CORS, body: JSON.stringify({ data: { search_profiles: [{ id: UP.toLowerCase(), name: "simone", fullName: "Simone" }] } }) });
@@ -319,6 +321,8 @@ let named = null;   // the address whose name the mocked UP keeps
     out.badRelay = await tryCall("relay", { path: "../../evil", method: "GET" });
     out.otherSite = await tryCall("relay", { path: "relay/info@evil.example/x", method: "GET" });
     out.relay = await fetch("relay/info").then((r) => r.json(), (e) => e.message);
+    out.ronin = await new ethers.JsonRpcProvider("https://api.roninchain.com/rpc", 2020, { staticNetwork: true }).send("eth_chainId", []).catch((e) => "err " + e.message);
+    out.notProxied = await tryCall("rpc", { url: "https://evil.example/rpc", body: "{}" });
     out.wk = typeof WalletKitBundle;
     out.dapp = getComputedStyle(document.querySelector('[data-go="dapp"]')).display;
     return out;
@@ -330,6 +334,7 @@ let named = null;   // the address whose name the mocked UP keeps
   ck("EXT-01: the host gives the key's address and method only", iso.key.ok && Object.keys(iso.key.ok).sort().join() === "address,method" && iso.key.ok.address === addr, JSON.stringify(iso.key));
   ck("EXT-01: the host refuses anything else (unknown requests, kinds, relay paths)", iso.unknown.code === 4200 && iso.badKind.code === -32602 && iso.badRelay.code === -32602 && iso.otherSite.code === -32602, JSON.stringify(iso));
   ck("the site's relay is reached through the host (wallet.html), not from the sandboxed page", iso.relay && iso.relay.test === "relay-info" && relayOrigins.length > 0 && relayOrigins.every((o) => o === `chrome-extension://${id}/wallet.html`), JSON.stringify({ relay: iso.relay, relayOrigins }));
+  ck("Ronin's RPC (no CORS for a sandboxed page) reached through the host; no other URL", iso.ronin === "0x7e4" && roninFrames.length > 0 && roninFrames.every((x) => x === `chrome-extension://${id}/wallet.html`) && iso.notProxied.code === -32602, JSON.stringify({ ronin: iso.ronin, roninFrames, np: iso.notProxied }));
   ck("no WalletConnect in the extension: no WalletKit bundle, its panel hidden", iso.wk === "undefined" && iso.dapp === "none", JSON.stringify(iso));
   const direct = await ctx.newPage();
   await direct.goto(`chrome-extension://${id}/up-wallet.html`, { waitUntil: "commit" });   // stopped: no "load"
