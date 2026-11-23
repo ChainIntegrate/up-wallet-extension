@@ -32,10 +32,12 @@
   // ---- the bridge to the host
   const parent = window.parent;
   const waiting = new Map();
+  const pushes = {};   // the host's own messages (the connected sites' requests): kind → listeners
   let n = 0;
   window.addEventListener("message", (e) => {
     if (e.source !== parent) return;
     const d = e.data;
+    if (d && d.upw === 1 && typeof d.push === "string") { for (const f of pushes[d.push] || []) { try { f(d.data); } catch (x) { /* the listener's own error */ } } return; }
     if (!d || d.upw !== 1 || !waiting.has(d.n)) return;
     const w = waiting.get(d.n);
     waiting.delete(d.n);
@@ -69,6 +71,7 @@
 
   window.__upwBridge = Object.freeze({
     call,
+    on(kind, f) { (pushes[kind] = pushes[kind] || []).push(f); },
     info: Object.freeze({ version: typeof init.version === "string" ? init.version : "", site: typeof init.site === "string" ? init.site : "" }),
   });
 })();

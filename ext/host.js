@@ -14,7 +14,11 @@
 //   - "relay": the site's relay service (gas paid by the site), on its known paths only;
 //   - "rpc": a JSON-RPC call to one of the few network RPCs that answer the site but not a sandboxed page
 //     (origin "null"; checked on 2026-11-23): only those URLs, POST only (RPC_PROXY, set by scripts/build.js);
-//   - "focus": bringing the wallet to the front.
+//   - "focus": bringing the wallet to the front;
+//   - "dapp-*" (phase 2): the requests of the connected sites, passed from the service worker to the page and
+//     its answers back (the site's origin is always the one Chrome gave the service worker, never the page's
+//     word); the list of connected sites, connecting the active tab's site (Chrome's permission for that site,
+//     asked here) and disconnecting one.
 // Anything else is refused. The page's state comes to it at start in the frame's URL fragment (it has no storage
 // of its own). Kept small on purpose: everything here is trusted with the key.
 (function () {
@@ -85,6 +89,58 @@
     } finally { busy = false; api.storage.session.remove("req:" + id).catch(() => null); }
   }
 
+  // ---- the connected sites' requests (phase 2), from the service worker
+  const SIGNING = new Set(["personal_sign", "eth_sign", "eth_signTypedData", "eth_signTypedData_v3", "eth_signTypedData_v4", "eth_sendTransaction"]);
+  const dappOpen = new Map();   // n → { origin, method }: passed to the page, not answered yet
+  const bgCalls = new Map();
+  let bg = null, ready = false, bgN = 0;
+  const push = (kind, data) => { if (frame.contentWindow) frame.contentWindow.postMessage({ upw: 1, push: kind, data }, "*"); };
+  function connectBg() {
+    const p = api.runtime.connect({ name: "host" });
+    p.onMessage.addListener((m) => {
+      if (!m || typeof m !== "object") return;
+      if (m.type === "request" && typeof m.n === "number") {
+        dappOpen.set(m.n, { origin: m.origin, method: m.method });
+        push("dapp-request", { n: m.n, origin: m.origin, method: m.method, params: m.params });
+      } else if (m.type === "reply") {
+        const w = bgCalls.get(m.c);
+        if (!w) return;
+        bgCalls.delete(m.c);
+        if (m.error) w.no(fail(m.error.code || -32603, m.error.message || "error")); else w.ok(m.result);
+      }
+    });
+    // The service worker restarted: the requests it passed are gone with it; connect again.
+    p.onDisconnect.addListener(() => {
+      if (bg === p) bg = null;
+      for (const w of bgCalls.values()) w.no(fail(4900, "the extension restarted"));
+      bgCalls.clear(); dappOpen.clear();
+      setTimeout(() => { connectBg(); if (ready) bg.postMessage({ type: "listen" }); }, 300);
+    });
+    bg = p;
+  }
+  connectBg();
+  const bgCall = (type, args) => new Promise((ok, no) => {
+    const c = ++bgN;
+    bgCalls.set(c, { ok, no });
+    try { bg.postMessage({ type, c, ...(args || {}) }); } catch (e) { bgCalls.delete(c); no(fail(4900, "the extension is restarting: try again")); }
+  });
+  const ORIGIN = /^https:\/\/[a-z0-9.-]+$/;   // https, no port (content-script match patterns take none)
+  async function connectActiveSite() {
+    const tabs = await api.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    const tab = tabs.find((t) => t.url && /^https:/.test(t.url));
+    if (!tab) {
+      throw fail(4100, it()
+        ? "Apri il sito della dApp nella scheda attiva, premi il pulsante di UP Wallet nella barra del browser mentre sei lì, poi riprova da questo pannello."
+        : "Open the dApp's site in the active tab, press UP Wallet's button in the browser's toolbar while there, then try again from this panel.");
+    }
+    const origin = new URL(tab.url).origin;
+    if (!ORIGIN.test(origin)) throw fail(-32602, "only https sites can be connected");
+    // Chrome asks the user for this one site (not "all sites").
+    const granted = await api.permissions.request({ origins: [origin + "/*"] }).catch(() => false);
+    if (!granted) throw fail(4001, it() ? "Accesso al sito non concesso." : "Access to the site not given.");
+    return { origin, sites: await bgCall("add-site", { origin, tabId: tab.id }) };
+  }
+
   // ---- what the page may ask
   const str = (v, max) => typeof v === "string" && v.length <= max;
   async function handle(type, a) {
@@ -104,7 +160,12 @@
         if (!a || typeof a !== "object" || !KINDS.has(a.kind)) throw fail(-32602, "unknown request");
         const json = JSON.stringify(a);
         if (json.length > MAX_REQUEST) throw fail(-32602, "request too large");
-        return ask(JSON.parse(json));
+        const req = JSON.parse(json);
+        // The site shown in the signing window: the connected site whose request is open, as Chrome named it;
+        // none when it is the wallet's own (a send, the key's balance). Never what the page says.
+        const open = [...dappOpen.values()].filter((x) => SIGNING.has(x.method));
+        req.site = open.length === 1 ? open[0].origin : null;
+        return ask(req);
       }
       case "relay": {
         if (!a || !str(a.path, 200) || !RELAY.test(a.path)) throw fail(-32602, "not a relay path");
@@ -120,6 +181,32 @@
         const r = await fetch(a.url, { method: "POST", cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", headers: { "content-type": "application/json" }, body: a.body });
         const body = await r.text();
         return { status: r.status, body: body.length > MAX_ANSWER ? "" : body };
+      }
+      case "dapp-listen": { ready = true; bg.postMessage({ type: "listen" }); return bgCall("state"); }
+      case "dapp-state": return bgCall("state");
+      case "dapp-answer": {
+        if (!a || !dappOpen.has(a.n)) throw fail(-32602, "no such request");
+        const json = JSON.stringify(a.error ? { error: a.error } : { result: a.result === undefined ? null : a.result });
+        if (json.length > MAX_ANSWER) throw fail(-32602, "answer too large");
+        dappOpen.delete(a.n);
+        bg.postMessage({ type: "answer", n: a.n, ...JSON.parse(json) });
+        return null;
+      }
+      case "dapp-session": {
+        if (!a || !ORIGIN.test(a.origin || "")) throw fail(-32602, "bad origin");
+        bg.postMessage(a.end ? { type: "session", origin: a.origin, end: true } : { type: "session", origin: a.origin, chainId: Number(a.chainId), account: String(a.account || "") });
+        return null;
+      }
+      case "dapp-event": {
+        if (!a || !ORIGIN.test(a.origin || "") || !["chainChanged", "accountsChanged"].includes(a.name)) throw fail(-32602, "bad event");
+        bg.postMessage({ type: "event", origin: a.origin, name: a.name, data: JSON.parse(JSON.stringify(a.data ?? null)) });
+        return null;
+      }
+      case "dapp-net": { if (a && Number(a.chainId) > 0) bg.postMessage({ type: "net", chainId: Number(a.chainId) }); return null; }
+      case "dapp-connect": return connectActiveSite();
+      case "dapp-disconnect": {
+        if (!a || !ORIGIN.test(a.origin || "")) throw fail(-32602, "bad origin");
+        return bgCall("remove-site", { origin: a.origin });
       }
       case "focus": {
         const tab = await api.tabs.getCurrent().catch(() => null);

@@ -8,7 +8,18 @@ const path = require("path");
 const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 const { ethers } = require("ethers");
 
-const DIST = path.join(__dirname, "..", "dist");
+// The extension under test: a copy of dist/ whose manifest also allows https://dapp.test, the test's dApp. A real
+// user grants a site with Chrome's prompt (optional_host_permissions), which a test cannot answer; the release
+// zip is dist/ itself, unchanged.
+const DIST = (() => {
+  const fs = require("fs"), os = require("os");
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "upw-ext-"));
+  fs.cpSync(path.join(__dirname, "..", "dist"), out, { recursive: true });
+  const m = JSON.parse(fs.readFileSync(path.join(out, "manifest.json"), "utf8"));
+  m.host_permissions.push("https://dapp.test/*");
+  fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify(m, null, 2));
+  return out;
+})();
 const res = []; const ck = (n, c, x = "") => res.push(`${c ? "PASS" : "FAIL"} ${n}${c ? "" : "\n      " + String(x).slice(0, 1500)}`);
 const UP = "0x4a2605796e0d91A9667d6E30365aEEC384C48c27", TO = "0x" + "77".repeat(20);
 const GDB = new ethers.Interface(["function getDataBatch(bytes32[]) view returns (bytes[])"]);
@@ -40,6 +51,8 @@ let named = null;   // the address whose name the mocked UP keeps
           case "eth_sendRawTransaction": raws.push(x.params[0]); return ok(ethers.keccak256(x.params[0]));
           case "eth_getBalance": return ok(u.host === "base-rpc.publicnode.com" ? "0x2386f26fc10000" : "0x0");   // 0.01 ETH on Base
           case "eth_call": {
+            // ERC-1271: the UP accepts the computer key's signatures (the page checks it before answering a dApp).
+            if (x.params[0].data && x.params[0].data.startsWith("0x1626ba7e")) return ok("0x1626ba7e" + "00".repeat(28));
             // The UP's controller names (Backup page): the computer key is "PC di prova" on Base.
             const c = x.params[0];
             if (u.host === "base-rpc.publicnode.com" && c.to && c.to.toLowerCase() === UP.toLowerCase() && c.data.startsWith(GDB.getFunction("getDataBatch").selector)) {
@@ -57,6 +70,7 @@ let named = null;   // the address whose name the mocked UP keeps
     if (u.host === "api.roninchain.com") { roninFrames.push((r.request().frame() && r.request().frame().url()) || "?"); const q = JSON.parse(r.request().postData() || "{}"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: q.id, result: "0x7e4" }) }); }
     // The site's relay: reached only by the host (the extension's origin), for the wallet page.
     if (u.host === "crosschain-lukso.chainintegrate.it" && u.pathname === "/relay/info") { relayOrigins.push((r.request().frame() && r.request().frame().url()) || "?"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ test: "relay-info" }) }); }
+    if (u.host === "dapp.test") return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>dApp</title><body>a dApp</body>" });
     if (u.host === "envio.lukso-mainnet.universal.tech") return r.fulfill({ contentType: "application/json", headers: CORS, body: JSON.stringify({ data: { search_profiles: [{ id: UP.toLowerCase(), name: "simone", fullName: "Simone" }] } }) });
     if (u.protocol === "chrome-extension:") return r.continue();
     return r.fulfill({ status: 503, body: "" });
@@ -323,8 +337,8 @@ let named = null;   // the address whose name the mocked UP keeps
     out.relay = await fetch("relay/info").then((r) => r.json(), (e) => e.message);
     out.ronin = await new ethers.JsonRpcProvider("https://api.roninchain.com/rpc", 2020, { staticNetwork: true }).send("eth_chainId", []).catch((e) => "err " + e.message);
     out.notProxied = await tryCall("rpc", { url: "https://evil.example/rpc", body: "{}" });
-    out.wk = typeof WalletKitBundle;
-    out.dapp = getComputedStyle(document.querySelector('[data-go="dapp"]')).display;
+    out.pair = await WalletKitBundle.WalletKit.init().then((k) => k.pair({ uri: "wc:x" })).then(() => "paired", (e) => e.message);
+    out.wcUri = getComputedStyle(document.getElementById("wcUri")).display;
     return out;
   });
   ck("EXT-01: the wallet page has no chrome.* API, and its storage holds no key", iso.chrome === "none" && iso.storageHasKey === false, JSON.stringify(iso));
@@ -335,13 +349,88 @@ let named = null;   // the address whose name the mocked UP keeps
   ck("EXT-01: the host refuses anything else (unknown requests, kinds, relay paths)", iso.unknown.code === 4200 && iso.badKind.code === -32602 && iso.badRelay.code === -32602 && iso.otherSite.code === -32602, JSON.stringify(iso));
   ck("the site's relay is reached through the host (wallet.html), not from the sandboxed page", iso.relay && iso.relay.test === "relay-info" && relayOrigins.length > 0 && relayOrigins.every((o) => o === `chrome-extension://${id}/wallet.html`), JSON.stringify({ relay: iso.relay, relayOrigins }));
   ck("Ronin's RPC (no CORS for a sandboxed page) reached through the host; no other URL", iso.ronin === "0x7e4" && roninFrames.length > 0 && roninFrames.every((x) => x === `chrome-extension://${id}/wallet.html`) && iso.notProxied.code === -32602, JSON.stringify({ ronin: iso.ronin, roninFrames, np: iso.notProxied }));
-  ck("no WalletConnect in the extension: no WalletKit bundle, its panel hidden", iso.wk === "undefined" && iso.dapp === "none", JSON.stringify(iso));
+  ck("no WalletConnect in the extension: the page's client is the connected sites' stand-in, pairing refused, its link field hidden", /niente WalletConnect/i.test(iso.pair) && iso.wcUri === "none", JSON.stringify(iso));
   const direct = await ctx.newPage();
   await direct.goto(`chrome-extension://${id}/up-wallet.html`, { waitUntil: "commit" });   // stopped: no "load"
   await direct.waitForFunction(() => document.body && /UP Wallet/.test(document.body.innerText), null, { timeout: 10000 }).catch(() => null);
   const alone = await direct.evaluate(() => ({ text: document.body.innerText, wallet: typeof signerProvider }));
   ck("the wallet page opened by itself (outside its host) runs nothing and says where the wallet is", /pulsante dell'estensione|extension's button/.test(alone.text) && alone.wallet === "undefined", JSON.stringify(alone));
   await direct.close();
+
+  // ---- phase 2: the wallet offered to a connected site (EIP-1193 / EIP-6963)
+  const DAPP = "https://dapp.test";
+  // The site in the signing window is the host's, never the page's word.
+  await f.evaluate(() => { window.__upwalletRequestSite = "https://uniswap.org"; });
+  mark();
+  pr = f.evaluate(async () => { try { return await signerProvider.request({ method: "personal_sign", params: [ethers.hexlify(ethers.toUtf8Bytes("solo mio")), signerAddress] }); } catch (e) { return { code: e.code }; } });
+  txt = await shown();
+  ck("the signing window names no site the wallet page claims (the host decides it)", !/uniswap/i.test(txt) && !/Richiesta da/.test(txt), txt);
+  await click("#cancel"); await pr;
+  await f.evaluate(() => { delete window.__upwalletRequestSite; });
+  // Chrome's permission for the site: in the test's copy of the manifest (see DIST), as after the user's yes.
+  const granted = "ok";
+  const dapp = await ctx.newPage();
+  dapp.on("pageerror", (e) => errs.push("dapp: " + e.message));
+  await dapp.goto(DAPP + "/");
+  const dappTab = await p.evaluate(async () => (await chrome.tabs.query({ url: "https://dapp.test/*" }))[0].id);
+  await p.evaluate((tabId) => { chrome.tabs.query = async () => [{ id: tabId, url: "https://dapp.test/" }]; chrome.permissions.request = async () => true; }, dappTab);
+  await f.evaluate(() => document.getElementById("upwConnectSite").click());
+  await f.waitForFunction(() => /Collegato: https:\/\/dapp\.test/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
+  const sitesTxt = await f.evaluate(() => document.querySelector(".upw-dapps").innerText);
+  ck("panel 4: the active tab's site connected with Chrome's permission for that site only, listed", granted === "ok" && /Collegato: https:\/\/dapp\.test/.test(sitesTxt) && /https:\/\/dapp\.test — non connesso alla UP ora/.test(sitesTxt), granted + " / " + sitesTxt);
+  const announced = async () => dapp.evaluate(() => new Promise((ok) => {
+    const got = []; window.addEventListener("eip6963:announceProvider", (e) => got.push(e.detail));
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    setTimeout(() => { window.__upw = (got.find((d) => d.info.rdns === "it.chainintegrate.upwallet") || {}).provider; ok({ list: got.map((d) => [d.info.name, d.info.rdns, d.info.icon.slice(0, 22)]), eth: typeof window.ethereum }); }, 100);
+  }));
+  let ann = await announced();
+  ck("the connected site's page gets UP Wallet at once, announced through EIP-6963 (not window.ethereum)", ann.list.length === 1 && ann.list[0][0] === "UP Wallet" && ann.list[0][1] === "it.chainintegrate.upwallet" && ann.list[0][2] === "data:image/png;base64," && ann.eth === "undefined", JSON.stringify(ann));
+  await dapp.reload();
+  ann = await announced();
+  ck("and at every load (a content script registered for that site only)", ann.list.length === 1 && ann.list[0][0] === "UP Wallet", JSON.stringify(ann));
+  const req = (method, params) => dapp.evaluate(async ([method, params]) => { try { return { r: await window.__upw.request({ method, params }) }; } catch (e) { return { code: e.code, m: e.message }; } }, [method, params]);
+  let d1 = await req("eth_chainId"), d2 = await req("eth_accounts"), d3 = await req("personal_sign", ["0x01", UP]);
+  ck("before connecting: the wallet's network, no account, nothing signed (4100)", d1.r === "0x2105" && Array.isArray(d2.r) && d2.r.length === 0 && d3.code === 4100, JSON.stringify([d1, d2, d3]));
+  // The page's check of panel 3 green (the mocked network gives no real permissions): the UP on Base, with SIGN.
+  await f.evaluate(([UP, signer]) => {
+    const net = NETWORKS.find((n) => n.key === "base");
+    compliance = { caip: "eip155:8453", up: UP, chainId: 8453, net, provider: new ethers.JsonRpcProvider(net.rpc, 8453, { staticNetwork: true }), perms: P.SIGN | P.CALL | P.TRANSFERVALUE, signer, km: "0x" + "4b".repeat(20) };
+    window.freshCompliance = async () => compliance;
+  }, [UP, addr]);
+  await dapp.evaluate(() => { window.__ev = []; window.__upw.on("accountsChanged", (a) => window.__ev.push(["accountsChanged", a])); window.__upw.on("chainChanged", (c) => window.__ev.push(["chainChanged", c])); });
+  d1 = await req("eth_requestAccounts");
+  d2 = await req("eth_accounts");
+  const ev = await dapp.evaluate(() => window.__ev);
+  const logTxt = await f.evaluate(() => document.getElementById("log").textContent);
+  ck("connect (eth_requestAccounts): the wallet page's check approves it, the site gets the UP and the events", d1.r && d1.r[0] === UP && d2.r[0] === UP && ev.some((e) => e[0] === "accountsChanged" && e[1][0] === UP) && /Richiesta di connessione da: dapp\.test/.test(logTxt) && /indirizzo dato dal browser/.test(logTxt), JSON.stringify({ d1, d2, ev, log: logTxt.slice(-1500) }));
+  const sitesNow = await f.evaluate(() => document.querySelector(".upw-dapps").innerText);
+  ck("panel 4 shows the site using the UP on its network", sitesNow.includes(`https://dapp.test — usa la UP ${UP} su chainId 8453`), sitesNow);
+  d1 = await req("eth_getBalance", [UP, "latest"]);
+  d2 = await req("wallet_watchAsset", [{}]);
+  d3 = await req("wallet_switchEthereumChain", [{ chainId: "0x2a" }]);
+  ck("reads answered from the network's RPC; other methods refused (4200); another network refused (4001)", d1.r === "0x2386f26fc10000" && d2.code === 4200 && d3.code === 4001, JSON.stringify([d1, d2, d3]));
+  // personal_sign from the site: the page's request window, then the signing window, which names the site.
+  const dsig = dapp.evaluate(async (UP) => { try { return { r: await window.__upw.request({ method: "personal_sign", params: ["0x" + Array.from(new TextEncoder().encode("hello dApp"), (b) => b.toString(16).padStart(2, "0")).join(""), UP] }) }; } catch (e) { return { code: e.code, m: e.message }; } }, UP);
+  await f.waitForFunction(() => !document.getElementById("requestModal").hidden && !document.getElementById("signBtn").disabled, null, { timeout: 15000 });
+  const modal = await f.evaluate(() => document.getElementById("requestModal").innerText);
+  mark();
+  await f.click("#signBtn");
+  txt = await shown();
+  ck("a site's message: the wallet's request window names the site, the signing window names it as Chrome gave it", /dapp\.test/.test(modal) && /hello dApp/.test(modal) && /Richiesta da: https:\/\/dapp\.test/.test(txt) && /hello dApp/.test(txt), modal.slice(0, 300) + " / " + txt);
+  await click("#sign");
+  const ds = await dsig;
+  ck("the site gets the signature of the computer key, checked by the UP (ERC-1271) before it goes", typeof ds.r === "string" && ethers.verifyMessage("hello dApp", ds.r) === addr, JSON.stringify(ds));
+  // disconnecting the site: no account, no permission, nothing reaches the wallet
+  await dapp.evaluate(() => { window.__ev = []; });
+  await f.evaluate(() => [...document.querySelectorAll(".upw-dapps button")].find((b) => /Scollega/.test(b.textContent)).click());
+  await f.waitForFunction(() => /Nessun sito collegato/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
+  const evOff = await dapp.evaluate(() => window.__ev);
+  d1 = await req("eth_accounts");
+  ck("disconnected: the site is told (no account) and refused afterwards (4100)", evOff.some((e) => e[0] === "accountsChanged" && e[1].length === 0) && d1.code === 4100, JSON.stringify({ evOff, d1 }));
+  await dapp.reload();
+  ann = await announced();
+  ck("a disconnected site's page no longer gets UP Wallet", ann.list.length === 0, JSON.stringify(ann));
+  await dapp.close();
 
   // ---- a password key
   mark();
@@ -378,6 +467,46 @@ let named = null;   // the address whose name the mocked UP keeps
   await click("#sign");
   sig = await pr;
   ck("password key: the right password signs", typeof sig === "string" && ethers.verifyMessage("con password", sig) === addr2, JSON.stringify(sig));
+
+  // ---- a site's request with the wallet closed: the wallet opens by itself, the request waits for it; closed
+  // with the request open, the site is refused (4001)
+  await f.evaluate(() => document.getElementById("upwConnectSite").click());
+  await f.waitForFunction(() => /Collegato: https:\/\/dapp\.test/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
+  const dapp2 = await ctx.newPage();
+  dapp2.on("pageerror", (e) => errs.push("dapp2: " + e.message));
+  await dapp2.goto(DAPP + "/");
+  await dapp2.evaluate(() => new Promise((ok) => { window.addEventListener("eip6963:announceProvider", (e) => { window.__upw = e.detail.provider; ok(); }); window.dispatchEvent(new Event("eip6963:requestProvider")); }));
+  const req2 = (method, params) => dapp2.evaluate(async ([method, params]) => { try { return { r: await window.__upw.request({ method, params }) }; } catch (e) { return { code: e.code, m: e.message }; } }, [method, params]);
+  const setCompliance = (fr) => fr.evaluate(([UP, signer]) => {
+    const net = NETWORKS.find((n) => n.key === "base");
+    compliance = { caip: "eip155:8453", up: UP, chainId: 8453, net, provider: new ethers.JsonRpcProvider(net.rpc, 8453, { staticNetwork: true }), perms: P.SIGN | P.CALL | P.TRANSFERVALUE, signer, km: "0x" + "4b".repeat(20) };
+    window.freshCompliance = async () => compliance;
+  }, [UP, addr2]);
+  await setCompliance(f);
+  const c2 = await req2("eth_requestAccounts");
+  await sw.evaluate(() => { self.__opened = []; chrome.windows.create = async (o) => { self.__opened.push(o); return { id: -7 }; }; });
+  await p.close();
+  const waitingSig = req2("personal_sign", ["0x" + Buffer.from("mentre chiuso").toString("hex"), UP]);
+  let opened = null;
+  for (let i = 0; i < 50 && !opened; i++) { opened = await sw.evaluate(() => self.__opened[0] || null); if (!opened) await new Promise((ok) => setTimeout(ok, 100)); }
+  ck("a site's request with the wallet closed: the wallet opens by itself, in a window at the top right", c2.r && c2.r[0] === UP && opened && opened.type === "popup" && /wallet\.html\?dapp=1$/.test(opened.url) && opened.focused === true, JSON.stringify({ c2, opened }));
+  const w2 = await ctx.newPage();
+  w2.on("pageerror", (e) => errs.push("wallet2: " + e.message));
+  await w2.goto(`chrome-extension://${id}/wallet.html?dapp=1`);
+  const f2 = await pageFrame(w2);
+  await f2.waitForFunction(() => typeof ethers !== "undefined" && typeof NETWORKS !== "undefined" && typeof P !== "undefined", null, { timeout: 15000 });
+  // The page's own check runs at load (and fails on the mocked network): set it green until the request shows.
+  for (let i = 0; i < 40; i++) {
+    await setCompliance(f2);
+    if (await f2.evaluate(() => !document.getElementById("requestModal").hidden)) break;
+    await new Promise((ok) => setTimeout(ok, 500));
+  }
+  const m2 = await f2.evaluate(() => document.getElementById("requestModal").innerText);
+  ck("the opened wallet takes the waiting request once its checks are green", /mentre chiuso/.test(m2) && /dapp\.test/.test(m2), m2.slice(0, 300));
+  await w2.close();
+  const closed = await waitingSig;
+  ck("the wallet closed with the site's request open: the site is refused (4001)", closed.code === 4001, JSON.stringify(closed));
+  await dapp2.close();
 
   ck("no page errors", errs.length === 0, errs.join(" | "));
   await ctx.close();

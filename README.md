@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 1 done, prototype (0.x), released on GitHub (0.1.9).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 2 (0.2.0): an injected wallet for the sites you connect, the wallet page isolated by the browser; prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -26,8 +26,19 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   `UPSTREAM.json` and packaged by `scripts/build.js`: ethers bundled (checked against the page's own
   integrity hash), the page's inline scripts moved to files (Manifest V3 runs no inline script; the
   manifest's policy is `script-src 'self'`), and the extension's own files, described below: the computer
-  key (`ext/device-key.js`), the signing window, the WalletConnect client and the page's link to it, the
-  relay calls to the site (`ext/ext-shim.js`) and the side panel's look (`ext/ext.css`). The toolbar button opens it in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab.
+  key (`ext/device-key.js`), the signing window, the connected sites (`ext/dapp-kit.js`), the relay calls to
+  the site (`ext/ext-shim.js`) and the side panel's look (`ext/ext.css`). The toolbar button opens the wallet
+  in the browser's side panel, as a browser wallet does; its menu (right click) opens it in a tab.
+- **The page is sandboxed** (from 0.2.0; review of 2026-11-04, EXT-01). It runs as a sandboxed page of the
+  extension (manifest `sandbox`): an opaque origin, no `chrome.*` API, no access to the extension's storage
+  (where the encrypted key is), to the passkey (whose relying party is the extension's id) or to the signing
+  window. The wallet is `wallet.html` with `ext/host.js`, a small privileged page that holds the page in a
+  frame and answers, by messages, only: the page's own settings (language, network, UP, contacts), the key's
+  address and method, a structured request for the signing window (one at a time; the site it names is the
+  host's, never the page's word), the site's relay on its known paths, the connected sites' requests and
+  answers. Everything else is refused. `ext/sandbox-shim.js`, the page's first script, gives it its storage
+  and that bridge. The page's own scripts (its decoders, everything it loads) can at most ask for a
+  signature, which the signing window shows and the user confirms; they cannot open the key.
 - **This computer's key** (`ext/device-key.js`): the page's wallet, announced through EIP-6963 as
   "Computer key (UP Wallet)". It prepares transactions (nonce, gas, fees from the network's RPC) and sends
   them; it does not hold the key: every signature goes to the signing window. Only read methods reach the
@@ -38,7 +49,7 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   "Send the key's balance to the UP" (one plain transfer to the page's UP, the balance minus the transfer's
   maximum fee, confirmed in the signing window: a key that is lost has no copy, and neither has its
   balance), delete. At every opening the key connects by itself (it only reads its address), with the
-  last UP used and the network, as a WalletConnect session's own setup does.
+  last UP used and the network.
 - **The signing window** (`ext/signer.html`, `ext/signer.js`, a window at the top right of the browser window, large enough for the browser's passkey dialogs; its buttons answer only a second after the request is shown, so a click meant for the page cannot sign): the only place where the code opens the key. What a request signs, and what the window shows of it, is computed by `ext/sign-plan.js`, which has no browser code: the Android app's signing window uses the same file. The
   key is a secp256k1 private key created there, and stored (`chrome.storage.local`) only encrypted with
   AES-256-GCM. The AES key comes from:
@@ -47,10 +58,6 @@ when the user chooses, as the Android app is. So the key can live in the extensi
     Password Manager, a phone, a security key;
   - or a **password** (at least 12 characters, PBKDF2-SHA256 with 600,000 rounds), the fallback where no
     passkey gives a PRF value.
-
-  **Today the separation between the page and the signing window is a rule of the code, not a boundary the
-  browser enforces** (the 2026-11-04 review, EXT-01): every script the page loads must be trusted as much as
-  the key. Making it a browser boundary is the next structural change (the plan, phase 2).
 
   For each request the window computes what is signed from the request itself, not from the page's words,
   and shows it: the message's text, the typed data's domain and content, the transaction's network,
@@ -65,22 +72,30 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   computer), with no admin permissions (it cannot add controllers or change permissions; it can use the UP's
   funds). Admin operations keep using an external wallet such as MetaMask. A lost computer or a removed
   extension is handled by revoking the key from the same page.
-- **Relay calls** (gas paid by the site) go to the site (`ext/ext-shim.js`); the extension has the site in its
-  host permissions, and the relayer and the sponsor service accept the extension's origin. Chrome lets the
+- **Relay calls** (gas paid by the site) go to the site through the host (`ext/ext-shim.js`, `ext/host.js`); the
+  extension has the site in its host permissions, and the relayer and the sponsor service accept the
+  extension's origin. The networks' RPCs answer the sandboxed page as they answer any site (checked on
+  2026-11-23 for every network of the page); Ronin's, the one that does not, goes through the host. Chrome lets the
   user limit an extension's "Site access": then the wallet says so at the top, with "Allow", which asks for
   it again (without it the relay calls fail, blocked by CORS).
 - **In the side panel** (about 400 pixels wide) the page has a compact header (`ext/ext.css`): a smaller
-  banner, the title on one line, the introduction left to panel 0. A click on the browser's notification
-  of a dApp's request brings the wallet back: its tab, or the window that holds the side panel or the
-  wallet's own window.
-- **dApps** connect through WalletConnect, as with the app; they are shown the site's name and icon. The
-  WalletConnect client lives in an offscreen document of the extension (`ext/wc-host.html`, `ext/wc-host.js`),
-  not in the page: a dApp stays connected with the wallet closed, while the browser runs (and after a restart
-  of the browser). The page uses that client through `ext/wc-remote.js`, with the same calls as its own, so
-  every proposal and request is still checked and confirmed by the page. A request with the wallet closed
-  opens it by itself, in a window at the top right; the page takes back the session's network and UP and this
-  computer's key, and receives the request once its checks are green. A wallet closed with a request not
-  answered rejects it, as a wallet window does.
+  banner, the title on one line, the introduction left to panel 0.
+- **dApps: an injected wallet, on the sites you connect** (from 0.2.0; no WalletConnect in the extension).
+  In the wallet, panel 4 "Connected sites", **Connect the active tab's site**: Chrome asks for access to that
+  one site (optional host permission, never "all sites"). That site's pages then get `ext/inpage.js`, an
+  EIP-1193 provider announced through EIP-6963 as **UP Wallet** (`it.chainintegrate.upwallet`), never written
+  to `window.ethereum`, so MetaMask and LUKSO's extension keep working; `ext/content.js` passes its calls to
+  the service worker (`ext/background.js`), which takes the site's origin from Chrome. The account is the UP
+  chosen in the wallet, on the wallet's network, as with a WalletConnect session: reads go to that network's
+  RPC; "Connect" (`eth_requestAccounts`) and everything signed go to the wallet page, which checks and
+  confirms them with the same code as WalletConnect's requests (`ext/dapp-kit.js` gives it the sites in place
+  of the WalletConnect client), then to the signing window, which names the site as Chrome gave it. Another
+  network is refused (the wallet's network is chosen in the wallet); other methods are refused (4200). A
+  request with the wallet closed opens it by itself, in a window at the top right, and waits for its checks;
+  a wallet closed with a request not answered refuses it (4001). **Disconnect** removes the site and gives
+  Chrome's access back. Checked with the dApps in use on 2026-11-22 (`spike/eip6963-discovery/`): listed by
+  hup, Morpho, KyberSwap, Yield Yak, BENQI, revoke.cash, Uniswap, Aave and Merkl; Aerodrome lists only a fixed
+  set of wallets, so it is used from the Android app (WalletConnect) or the site's page with MetaMask.
 
 Non-custodial throughout: the key is created on the computer, never leaves the extension and has no copy.
 
@@ -132,7 +147,9 @@ extension does not update by itself.
 
 First use: open the extension (toolbar), accept the warning, choose the network and the UP, press "Use this
 computer's key": the signing window creates the key with a passkey (or a password). Then authorize its
-address on the UP from the site's Backup page, on each network.
+address on the UP from the site's Backup page, on each network. To use a dApp: open it in a tab, press UP
+Wallet's toolbar button there, and in panel 4 press "Connect the active tab's site"; then on the dApp press
+"Connect" and choose "UP Wallet".
 
 ## Phase 0: the passkey test
 
@@ -151,9 +168,13 @@ it, otherwise Google Password Manager, a phone or a security key), and the passw
 supports PRF (Chrome DevTools Protocol), the RPCs mocked: the page and its Content-Security-Policy, its
 texts for the computer key, the warning, a passkey key, a personal message, typed data, a transaction, a
 transaction through the Key Manager, a gas-relay operation through the page's own client, the refusals, a
-rejection, WalletConnect through the extension's client (with a stand-in for WalletKit: pairing, a session,
-requests and answers, the wallet opened by a request, the session taken back, rejections when the wallet
-closes), the buttons of the signing window armed after a moment, the key's balance sent to the UP, at every
+rejection; the page's isolation (EXT-01: the review's proof-of-concept steps, run in the page, fail; the host
+refuses anything else; the relay and Ronin's RPC through the host); a connected site (a test dApp, allowed in
+the test's copy of the manifest, since a test cannot answer Chrome's prompt): the provider announced at once
+and at every load, the network and no account before connecting, the connection checked by the page, reads,
+refusals, a message signed through the page's request window and the signing window, which names the site,
+a request with the wallet closed (the wallet opens and takes it; closed again, the site is refused),
+disconnecting; the buttons of the signing window armed after a moment, the key's balance sent to the UP, at every
 opening the last UP, the key and "Only simulation" back, the compact header, the euro prices, the site
 access withheld, delete, a password key (too short, wrong, right). The CI runs it on every push.
 
@@ -190,12 +211,13 @@ qualifies the isolation: see EXT-01 above and the plan. Two items of 2026-10-29 
    0.14.0 (ChainIntegrate's Supplier Trust Registry decoded), the panel "This computer" linking to the
    LUKSO authorization page on LUKSO, one folder in the zip, the signing logic in `ext/sign-plan.js`
    (shared with the Android app's signing window). Next: Firefox (an `.xpi` signed by Mozilla as an unlisted add-on).
-3. **Phase 2: no WalletConnect** (decided on 2026-11-22). The UP offered to dApps in the browser's tabs as an
-   injected wallet (EIP-1193, announced through EIP-6963), every request through the same checks and
-   confirmation window (Cross_Chain's roadmap, step 5). First a discovery test (`spike/eip6963-discovery/`):
-   whether the dApps in use list it. If they do, one release: the signing window isolated from the rest by
+3. **Phase 2: no WalletConnect** (decided on 2026-11-22; 0.2.0). The UP offered to dApps in the browser's tabs
+   as an injected wallet (EIP-1193, announced through EIP-6963), every request through the same checks and
+   confirmation window (Cross_Chain's roadmap, step 5). The discovery test first (`spike/eip6963-discovery/`,
+   2026-11-22: listed by every dApp in use but Aerodrome); then, in one release, the wallet page isolated by
    the browser (EXT-01), the provider on the sites the user connects only (permission granted site by site),
-   WalletConnect removed from the extension (the Android app keeps it); then the two-provider review.
+   WalletConnect removed from the extension (the Android app keeps it). Next: the two-provider review, right
+   after the release (Cross_Chain `AUDIT.md`, review policy).
 4. **Later: the key signing inside the hardware.** Today the passkey unlocks the key, which is decrypted
    for one signature in the signing window. A passkey signing by itself (P-256, never leaving Windows
    Hello or a security key) needs a contract on the UP that checks such signatures (an ERC-4337 validator,
@@ -205,6 +227,6 @@ qualifies the isolation: see EXT-01 above and the plan. Two items of 2026-10-29 
 ## License
 
 MIT for this repository's code ([LICENSE](LICENSE)). Third-party code in the extension keeps its own
-license: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (the WalletConnect bundle among it, under the
-WalletConnect Community License). The ChainIntegrate name and logo are not covered by the license.
+license: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The ChainIntegrate name and logo are not covered
+by the license.
 Provided "as is", without warranty of any kind: experimental, at your own risk.

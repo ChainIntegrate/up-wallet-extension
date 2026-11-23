@@ -4,17 +4,8 @@ This repository's own code is under the MIT license ([LICENSE](LICENSE)). The ex
 (`dist/`, and the zip attached to each release) also contains the third-party code below, each under its own
 terms.
 
-## WalletConnect bundle (Reown)
-
-`vendor/walletkit-1.6.0.min.js`, taken from the Cross_Chain repository at the commit pinned in
-`UPSTREAM.json`, together with the UP Wallet page.
-
-> Portions © 2025 Reown, Inc. All Rights Reserved
-
-Under the WalletConnect Community License Agreement of Reown, Inc., which is not an open-source license and
-has its own usage thresholds. The notice is in the page's footer; the license text and the list of the other
-packages in the bundle are in the Cross_Chain repository (`vendor/walletkit-1.6.0.LICENSE.md`,
-`vendor/walletkit-1.6.0.THIRD-PARTY.txt`, `THIRD_PARTY_NOTICES.md`).
+From 0.2.0 the extension no longer contains the WalletConnect bundle (Reown's WalletKit): dApps reach it as an
+injected wallet. The page's footer still names it, as on the site, where the page uses it.
 
 ## Other components
 

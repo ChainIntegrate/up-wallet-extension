@@ -114,7 +114,8 @@ async function main() {
   // The extension's additions, as in the Android app: the shim right after theme.js, before any other script
   // of the page; the computer key after config.js, once chains.js and ethers are loaded.
   // The sandbox's storage and bridge before any script of the page (theme.js reads the storage at once).
-  html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="ext/sandbox-shim.js"></script>\n<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>\n<link rel="stylesheet" href="ext/ext.css">', "theme.js script tag");
+  // ext/dapp-kit.js: the connected sites in place of WalletConnect (phase 2), before the page's scripts.
+  html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="ext/sandbox-shim.js"></script>\n<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>\n<script src="ext/dapp-kit.js"></script>\n<link rel="stylesheet" href="ext/ext.css">', "theme.js script tag");
   html = replaceOnce(html, '<script src="config.js"></script>', '<script src="config.js"></script>\n<script src="ext/device-key.js"></script>', "config.js script tag");
   html = replaceOnce(html, "const PAGE_COMMIT = null;", `const PAGE_COMMIT = ${JSON.stringify(upstream.commit.slice(0, 7))};`, "PAGE_COMMIT");
 
@@ -138,7 +139,10 @@ async function main() {
   fs.mkdirSync(path.join(OUT, "ext", "icons"), { recursive: true });
   fs.writeFileSync(path.join(OUT, "ext", "ext-shim.js"),
     fs.readFileSync(path.join(ROOT, "ext", "ext-shim.js"), "utf8").replace("__SITE__", site).replace("__PAGE__", PAGE).replace("__RPC_PROXY__", JSON.stringify(RPC_PROXY)));
-  for (const f of ["background.js", "signer.html", "ext.css", "sandbox-shim.js"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
+  for (const f of ["background.js", "signer.html", "ext.css", "sandbox-shim.js", "dapp-kit.js", "content.js"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
+  // The provider in the connected sites' pages, with the extension's icon for their wallet lists (EIP-6963).
+  const icon = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "ext", "icons", "icon-96.png")).toString("base64");
+  fs.writeFileSync(path.join(OUT, "ext", "inpage.js"), fs.readFileSync(path.join(ROOT, "ext", "inpage.js"), "utf8").replace("__ICON__", icon));
   // The host: the privileged page that holds the sandboxed wallet page.
   fs.writeFileSync(path.join(OUT, "ext", "host.js"), fs.readFileSync(path.join(ROOT, "ext", "host.js"), "utf8").replace("__SITE__", site).replace("__RPC_PROXY__", JSON.stringify(RPC_PROXY)));
   fs.copyFileSync(path.join(ROOT, "ext", "wallet.html"), path.join(OUT, HOST));
@@ -163,8 +167,11 @@ async function main() {
     action: { default_title: "UP Wallet", default_icon: icons },
     background: { service_worker: "ext/background.js" },
     side_panel: { default_path: HOST },
-    permissions: ["storage", "sidePanel", "contextMenus"],
+    // scripting and activeTab: the injected wallet (phase 2), on the sites the user connects one by one, each
+    // with its own permission (optional_host_permissions, asked for that site only).
+    permissions: ["storage", "sidePanel", "contextMenus", "scripting", "activeTab"],
     host_permissions: [site + "*", ...RPC_PROXY.map((u) => new URL(u).origin + "/*")],
+    optional_host_permissions: ["https://*/*"],
     // The wallet page: sandboxed (opaque origin, no chrome.* API), only framed by the host, its scripts only the
     // extension's own files. Popups (links to the site and explorers) open outside the sandbox.
     sandbox: { pages: [PAGE] },
