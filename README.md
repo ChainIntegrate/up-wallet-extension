@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 2 (0.2.0): an injected wallet for the sites you connect, the wallet page isolated by the browser; prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 2 (0.2.0, the new version announced from 0.2.1): an injected wallet for the sites you connect, the wallet page isolated by the browser; prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -78,6 +78,13 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   2026-11-23 for every network of the page); Ronin's, the one that does not, goes through the host. Chrome lets the
   user limit an extension's "Site access": then the wallet says so at the top, with "Allow", which asks for
   it again (without it the relay calls fail, blocked by CORS).
+- **A new version announced** (from 0.2.1; Cross_Chain `WALLET-BACKLOG.md` item 14): at every opening the host
+  asks the site's relay service which is the latest full release (`relay/versions`, which reads GitHub's
+  "latest" at most every 30 minutes; the wallet never calls GitHub) and, when it is newer, shows above the
+  wallet the version it has and the latest, how to update (copy the files into the same folder, "Load
+  unpacked" on it, never remove the extension) and the download link, only if it is a file of this
+  extension's own releases. "Later" hides it for three days. Nothing is downloaded or installed by itself,
+  nothing about the user is sent.
 - **In the side panel** (about 400 pixels wide) the page has a compact header (`ext/ext.css`): a smaller
   banner, the title on one line, the introduction left to panel 0.
 - **dApps: an injected wallet, on the sites you connect** (from 0.2.0; no WalletConnect in the extension).
@@ -174,7 +181,8 @@ the test's copy of the manifest, since a test cannot answer Chrome's prompt): th
 and at every load, the network and no account before connecting, the connection checked by the page, reads,
 refusals, a message signed through the page's request window and the signing window, which names the site,
 a request with the wallet closed (the wallet opens and takes it; closed again, the site is refused),
-disconnecting; the buttons of the signing window armed after a moment, the key's balance sent to the UP, at every
+disconnecting; a newer version announced (its own release links only, "Later", the same or an older version
+not announced); the buttons of the signing window armed after a moment, the key's balance sent to the UP, at every
 opening the last UP, the key and "Only simulation" back, the compact header, the euro prices, the site
 access withheld, delete, a password key (too short, wrong, right). The CI runs it on every push.
 

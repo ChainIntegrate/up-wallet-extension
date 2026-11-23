@@ -229,6 +229,53 @@
     if (typeof m.n === "number" && frame.contentWindow) frame.contentWindow.postMessage({ upw: 1, n: m.n, ...out }, "*");
   });
 
+  // ---- a new version (WALLET-BACKLOG item 14), as ChainIntegrate Account does: the site's relay service says
+  // which is the latest full release (it reads GitHub; the wallet never does). Shown here, above the wallet,
+  // with how to update; the link only if it is a file or page of this extension's own releases. Nothing is
+  // downloaded or installed by itself, nothing about the user is sent (a plain read).
+  const newer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
+  const OWN_RELEASES = "https://github.com/ChainIntegrate/up-wallet-extension/releases/";
+  (async () => {
+    let v = null;
+    try {
+      const r = await fetch(SITE + "relay/versions", { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+      v = r.ok ? (await r.json()).extension : null;
+    } catch (e) { return; }
+    const mine = api.runtime.getManifest().version;
+    if (!v || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(v.version || "") || !newer(v.version, mine)) return;
+    // "Later": not shown again for three days, for that version.
+    const dismissed = "upwallet.update.later";
+    const [laterV, laterAt] = String(localStorage.getItem(dismissed) || "").split("|");
+    if (laterV === v.version && Date.now() - Number(laterAt) < 3 * 86400000) return;
+    const box = $("update");
+    const el = (tag, text) => { const e = document.createElement(tag); if (text) e.textContent = text; return e; };
+    const head = el("div");
+    head.append(el("b", it() ? `È disponibile UP Wallet ${v.version}` : `UP Wallet ${v.version} is available`), document.createTextNode(it() ? ` (questa è la ${mine}).` : ` (this is ${mine}).`));
+    box.appendChild(head);
+    const steps = el("ol");
+    const own = (u) => typeof u === "string" && u.startsWith(OWN_RELEASES) && !/[\s"'<>]/.test(u);
+    const li1 = el("li");
+    if (own(v.download)) {
+      const a = el("a", it() ? "Scarica lo zip" : "Download the zip");
+      a.href = v.download; a.target = "_blank"; a.rel = "noopener noreferrer";
+      li1.append(a, document.createTextNode(it() ? " (dalle release di ChainIntegrate su GitHub)." : " (from ChainIntegrate's releases on GitHub)."));
+    } else li1.textContent = it() ? "Scarica lo zip dalle release di up-wallet-extension su GitHub." : "Download the zip from up-wallet-extension's releases on GitHub.";
+    steps.append(li1,
+      el("li", it() ? "Copia tutto il contenuto della cartella UP-Wallet-Extension dello zip nella cartella da cui gira già l'estensione (sostituisci i file)." : "Copy everything in the zip's UP-Wallet-Extension folder into the folder the extension already runs from (replace the files)."),
+      el("li", it() ? "Su chrome://extensions premi \"Carica estensione non pacchettizzata\" sulla stessa cartella e controlla la versione. Non rimuovere mai l'estensione: la chiave si perderebbe." : "On chrome://extensions press \"Load unpacked\" on the same folder and check the version. Never remove the extension: its key would be lost."));
+    box.appendChild(steps);
+    if (own(v.notes)) {
+      const n = el("a", it() ? "Cosa cambia" : "What changes");
+      n.href = v.notes; n.target = "_blank"; n.rel = "noopener noreferrer";
+      const p = el("div"); p.style.marginTop = "4px"; p.appendChild(n); box.appendChild(p);
+    }
+    const later = el("button", it() ? "Più tardi" : "Later");
+    later.type = "button";
+    later.addEventListener("click", () => { try { localStorage.setItem(dismissed, `${v.version}|${Date.now()}`); } catch (e) { /* shown again */ } box.hidden = true; });
+    box.appendChild(later);
+    box.hidden = false;
+  })();
+
   // ---- Chrome's "Site access": without it the extension cannot reach the site (the relay, the gas paid by the
   // site). Said here, with a button that asks for it again.
   (async () => {

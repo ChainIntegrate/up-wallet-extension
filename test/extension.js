@@ -35,6 +35,10 @@ let named = null;   // the address whose name the mocked UP keeps
   // The wallet page is sandboxed (origin "null"): the RPCs answer it as they answer any site, with CORS.
   const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" };
   const relayOrigins = [], roninFrames = [];
+  // What the site says is the latest extension: by default the version under test (nothing to announce).
+  const OWN = "https://github.com/ChainIntegrate/up-wallet-extension/releases/";
+  const myVersion = JSON.parse(require("fs").readFileSync(path.join(DIST, "manifest.json"), "utf8")).version;
+  let versionsAnswer = () => ({ extension: { version: myVersion, download: OWN + `download/v${myVersion}/up-wallet-extension.zip`, notes: OWN + `tag/v${myVersion}` } });
   await ctx.route("**/*", (r) => {
     const u = new URL(r.request().url());
     if (r.request().method() === "OPTIONS") return r.fulfill({ status: 204, headers: CORS, body: "" });
@@ -70,6 +74,8 @@ let named = null;   // the address whose name the mocked UP keeps
     }
     // Ronin's RPC answers the site but not a sandboxed page (no CORS for origin "null"): reached by the host.
     if (u.host === "api.roninchain.com") { roninFrames.push((r.request().frame() && r.request().frame().url()) || "?"); const q = JSON.parse(r.request().postData() || "{}"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: q.id, result: "0x7e4" }) }); }
+    // The site's relay service: the latest versions (a new release announced in the wallet).
+    if (u.host === "crosschain-lukso.chainintegrate.it" && u.pathname === "/relay/versions") return r.fulfill({ contentType: "application/json", body: JSON.stringify(versionsAnswer()) });
     // The site's relay: reached only by the host (the extension's origin), for the wallet page.
     if (u.host === "crosschain-lukso.chainintegrate.it" && u.pathname === "/relay/info") { relayOrigins.push((r.request().frame() && r.request().frame().url()) || "?"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ test: "relay-info" }) }); }
     if (u.host === "dapp.test") return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>dApp</title><body>a dApp</body>" });
@@ -295,6 +301,34 @@ let named = null;   // the address whose name the mocked UP keeps
   const acc = await p4.evaluate(() => (document.getElementById("banner") || {}).innerText || "");
   ck("site access withheld by Chrome: the wallet (its host) says so, with a button that asks for it", /Accesso ai siti/.test(acc) && /Consenti/.test(acc), acc);
   await p4.close();
+
+  // ---- a new version announced above the wallet (the site's relay service says which is the latest)
+  const updateBox = async (answer) => {
+    versionsAnswer = () => answer;
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => errs.push("update: " + e.message));
+    await pg.goto(`chrome-extension://${id}/wallet.html`);
+    await pg.waitForTimeout(1500);
+    const out = await pg.evaluate(() => { const b = document.getElementById("update"); return { shown: !b.hidden, text: b.innerText, links: [...b.querySelectorAll("a")].map((a) => [a.textContent, a.href, a.target, a.rel]) }; });
+    return { pg, out };
+  };
+  let up = await updateBox({ extension: { version: "9.9.9", download: OWN + "download/v9.9.9/up-wallet-extension.zip", notes: OWN + "tag/v9.9.9" } });
+  ck("a newer version: announced above the wallet, with how to update (same folder, never remove) and its own release links", up.out.shown && /È disponibile UP Wallet 9\.9\.9/.test(up.out.text) && up.out.text.includes(`questa è la ${myVersion}`) && /stessa cartella/.test(up.out.text) && /Non rimuovere mai/.test(up.out.text)
+    && up.out.links.length === 2 && up.out.links[0][1] === OWN + "download/v9.9.9/up-wallet-extension.zip" && up.out.links[0][2] === "_blank" && /noopener/.test(up.out.links[0][3]) && up.out.links[1][1] === OWN + "tag/v9.9.9", JSON.stringify(up.out));
+  await up.pg.evaluate(() => [...document.querySelectorAll("#update button")].find((b) => /Più tardi/.test(b.textContent)).click());
+  const later = await up.pg.evaluate(() => document.getElementById("update").hidden);
+  await up.pg.close();
+  up = await updateBox({ extension: { version: "9.9.9", download: OWN + "download/v9.9.9/up-wallet-extension.zip", notes: OWN + "tag/v9.9.9" } });
+  ck("\"Later\": the same version not announced again for three days", later === true && !up.out.shown, JSON.stringify({ later, out: up.out }));
+  await up.pg.close();
+  up = await updateBox({ extension: { version: "9.9.10", download: "https://evil.example/up-wallet.zip", notes: "https://github.com/someone/else/releases/tag/v9.9.10" } });
+  ck("a link that is not one of this extension's own releases is not shown (the announcement only)", up.out.shown && /9\.9\.10/.test(up.out.text) && up.out.links.length === 0, JSON.stringify(up.out));
+  await up.pg.close();
+  up = await updateBox({ extension: { version: myVersion, download: OWN + "x", notes: OWN + "y" } });
+  const up2 = await updateBox({ extension: { version: "0.0.1", download: OWN + "x", notes: OWN + "y" } });
+  ck("the same or an older version: nothing announced", !up.out.shown && !up2.out.shown, JSON.stringify([up.out, up2.out]));
+  await up.pg.close(); await up2.pg.close();
+  versionsAnswer = () => ({ extension: { version: myVersion, download: OWN + "x", notes: OWN + "y" } });
 
   // ---- refusals
   const call = (m, params) => f.evaluate(async ([m, params]) => { try { await signerProvider.request({ method: m, params }); return "signed"; } catch (e) { return [e.code, e.message]; } }, [m, params]);
