@@ -212,7 +212,9 @@
       ["Connect the dApp again.", "Connect the dApp again from the site."],
     ],
   };
-  const swap = (s) => (typeof s === "string" ? PHRASES[en() ? "en" : "it"].reduce((x, [a, b]) => x.split(a).join(b), s) : s);
+  // The footer's WalletConnect notice: the extension no longer contains it.
+  const WC_NOTICE = /<br><span style="font-size:11\.5px;">WalletConnect: Portions[\s\S]*?<\/span>/;
+  const swap = (s) => (typeof s === "string" ? PHRASES[en() ? "en" : "it"].reduce((x, [a, b]) => x.split(a).join(b), s).replace(WC_NOTICE, "") : s);
 
   document.addEventListener("DOMContentLoaded", async () => {
     // The page's t() (a global function of its script) through the phrases above; the texts shown again.

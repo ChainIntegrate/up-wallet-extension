@@ -24,7 +24,17 @@ const READS = new Set(["eth_blockNumber", "eth_call", "eth_estimateGas", "eth_fe
 const MAX_QUEUE = 20;
 const err = (code, message) => ({ code, message });
 
-api.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => null);
+// The toolbar button opens the side panel here, not by Chrome's panel behaviour: the click also gives this
+// extension the tab for a moment (activeTab), so the site open in it is noted for "Connect the active tab's
+// site" (Chrome does not grant it when the button opens the panel by itself, seen on 0.2.1).
+api.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => null);
+api.action.onClicked.addListener((tab) => {
+  api.sidePanel.open({ windowId: tab.windowId }).catch(() => null);   // first, within the click
+  let origin = null;
+  try { origin = tab.url ? new URL(tab.url).origin : null; } catch (e) { /* no address */ }
+  if (origin && ORIGIN.test(origin)) api.storage.session.set({ actionTab: { id: tab.id, origin, at: Date.now() } }).catch(() => null);
+  else api.storage.session.remove("actionTab").catch(() => null);
+});
 
 async function openTab() {
   const url = api.runtime.getURL(HOST);

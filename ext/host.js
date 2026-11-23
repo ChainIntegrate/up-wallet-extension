@@ -127,7 +127,16 @@
   const ORIGIN = /^https:\/\/[a-z0-9.-]+$/;   // https, no port (content-script match patterns take none)
   async function connectActiveSite() {
     const tabs = await api.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
-    const tab = tabs.find((t) => t.url && /^https:/.test(t.url));
+    let tab = tabs.find((t) => t.url && /^https:/.test(t.url));
+    // The tab whose toolbar button opened the wallet (ext/background.js notes it): still the active one, and
+    // still on the same site.
+    if (!tab) {
+      const at = (await api.storage.session.get("actionTab").catch(() => ({}))).actionTab;
+      const t = at ? await api.tabs.get(at.id).catch(() => null) : null;
+      let same = false;
+      try { same = !!(t && t.active && t.url && new URL(t.url).origin === at.origin); } catch (e) { same = false; }
+      if (same) tab = t;
+    }
     if (!tab) {
       throw fail(4100, it()
         ? "Apri il sito della dApp nella scheda attiva, premi il pulsante di UP Wallet nella barra del browser mentre sei lì, poi riprova da questo pannello."

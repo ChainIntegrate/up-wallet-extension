@@ -88,8 +88,9 @@ when the user chooses, as the Android app is. So the key can live in the extensi
 - **In the side panel** (about 400 pixels wide) the page has a compact header (`ext/ext.css`): a smaller
   banner, the title on one line, the introduction left to panel 0.
 - **dApps: an injected wallet, on the sites you connect** (from 0.2.0; no WalletConnect in the extension).
-  In the wallet, panel 4 "Connected sites", **Connect the active tab's site**: Chrome asks for access to that
-  one site (optional host permission, never "all sites"). That site's pages then get `ext/inpage.js`, an
+  On the dApp's tab, press UP Wallet's toolbar button (the click lets the extension read that tab's site, for a
+  moment: activeTab), then in the wallet, panel 4 "Connected sites", **Connect the active tab's site**: Chrome
+  asks for access to that one site (optional host permission, never "all sites"). That site's pages then get `ext/inpage.js`, an
   EIP-1193 provider announced through EIP-6963 as **UP Wallet** (`it.chainintegrate.upwallet`), never written
   to `window.ethereum`, so MetaMask and LUKSO's extension keep working; `ext/content.js` passes its calls to
   the service worker (`ext/background.js`), which takes the site's origin from Chrome. The account is the UP

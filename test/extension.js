@@ -140,7 +140,9 @@ let named = null;   // the address whose name the mocked UP keeps
   }));
   ck("the page loads in the extension, the computer key announced as its only wallet (EIP-6963)", seen.length === 1 && seen[0] === "Computer key (UP Wallet)", JSON.stringify(seen));
   const sp = await p.evaluate(async () => ({ b: await chrome.sidePanel.getPanelBehavior(), m: chrome.runtime.getManifest() }));
-  ck("the toolbar button opens the wallet in the side panel (side_panel in the manifest, panel behaviour set)", sp.b.openPanelOnActionClick === true && sp.m.side_panel.default_path === "wallet.html", JSON.stringify(sp.b));
+  // The button opens the panel from the service worker (action.onClicked), so the click also notes the tab's site.
+  ck("the toolbar button opens the wallet in the side panel (side_panel in the manifest, opened by the extension on the click)", sp.b.openPanelOnActionClick === false && sp.m.side_panel.default_path === "wallet.html" && !sp.m.action.default_popup, JSON.stringify(sp.b));
+  ck("the footer no longer names WalletConnect (not in the extension)", !(await f.evaluate(() => document.body.innerText)).includes("Reown"));
   ck("no inline script left in the page; nothing refused by the Content-Security-Policy", await f.evaluate(() => [...document.scripts].every((s) => s.src)) && csp.length === 0, csp.join(" | "));
   const v = await f.$eval("#pageVersion", (e) => e.textContent);
   const ver = JSON.parse(require("fs").readFileSync(path.join(DIST, "manifest.json"), "utf8")).version;
@@ -409,7 +411,14 @@ let named = null;   // the address whose name the mocked UP keeps
   dapp.on("pageerror", (e) => errs.push("dapp: " + e.message));
   await dapp.goto(DAPP + "/");
   const dappTab = await p.evaluate(async () => (await chrome.tabs.query({ url: "https://dapp.test/*" }))[0].id);
-  await p.evaluate((tabId) => { chrome.tabs.query = async () => [{ id: tabId, url: "https://dapp.test/" }]; chrome.permissions.request = async () => true; }, dappTab);
+  // As in the side panel: the active tab's address is not readable (no activeTab grant from the panel itself).
+  await p.evaluate(() => { chrome.tabs.query = async () => []; chrome.permissions.request = async () => true; });
+  await f.evaluate(() => document.getElementById("upwConnectSite").click());
+  await f.waitForFunction(() => /premi il pulsante di UP Wallet/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
+  const noTab = await f.evaluate(() => document.querySelector(".upw-dapps").innerText);
+  ck("no site known (the toolbar button not pressed on it): the panel says to press it there, nothing connected", /premi il pulsante di UP Wallet/.test(noTab) && /Nessun sito collegato/.test(noTab), noTab);
+  // The toolbar button pressed on the dApp's tab: the service worker notes that tab's site (action.onClicked).
+  await sw.evaluate((tabId) => chrome.storage.session.set({ actionTab: { id: tabId, origin: "https://dapp.test", at: Date.now() } }), dappTab);
   await f.evaluate(() => document.getElementById("upwConnectSite").click());
   await f.waitForFunction(() => /Collegato: https:\/\/dapp\.test/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
   const sitesTxt = await f.evaluate(() => document.querySelector(".upw-dapps").innerText);
@@ -509,12 +518,15 @@ let named = null;   // the address whose name the mocked UP keeps
 
   // ---- a site's request with the wallet closed: the wallet opens by itself, the request waits for it; closed
   // with the request open, the site is refused (4001)
-  await f.evaluate(() => document.getElementById("upwConnectSite").click());
-  await f.waitForFunction(() => /Collegato: https:\/\/dapp\.test/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
   const dapp2 = await ctx.newPage();
   dapp2.on("pageerror", (e) => errs.push("dapp2: " + e.message));
   await dapp2.goto(DAPP + "/");
-  await dapp2.evaluate(() => new Promise((ok) => { window.addEventListener("eip6963:announceProvider", (e) => { window.__upw = e.detail.provider; ok(); }); window.dispatchEvent(new Event("eip6963:requestProvider")); }));
+  const dapp2Tab = await sw.evaluate(async () => (await chrome.tabs.query({ url: "https://dapp.test/*" }))[0].id);
+  await sw.evaluate((tabId) => chrome.storage.session.set({ actionTab: { id: tabId, origin: "https://dapp.test", at: Date.now() } }), dapp2Tab);
+  await f.evaluate(() => document.getElementById("upwConnectSite").click());
+  await f.waitForFunction(() => /Collegato: https:\/\/dapp\.test/.test(document.querySelector(".upw-dapps").innerText), null, { timeout: 10000 }).catch(() => null);
+  const got = await dapp2.evaluate(() => new Promise((ok) => { window.addEventListener("eip6963:announceProvider", (e) => { window.__upw = e.detail.provider; ok(true); }); window.dispatchEvent(new Event("eip6963:requestProvider")); setTimeout(() => ok(false), 5000); }));
+  if (!got) throw new Error("the provider was not injected in the second dApp page");
   const req2 = (method, params) => dapp2.evaluate(async ([method, params]) => { try { return { r: await window.__upw.request({ method, params }) }; } catch (e) { return { code: e.code, m: e.message }; } }, [method, params]);
   const setCompliance = (fr) => fr.evaluate(([UP, signer]) => {
     const net = NETWORKS.find((n) => n.key === "base");
