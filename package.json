@@ -1,12 +1,12 @@
 {
   "name": "up-wallet-extension",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "UP Wallet as a desktop browser extension (Chrome, Edge, Brave).",
   "license": "MIT",
   "scripts": {
     "build": "node scripts/build.js",
-    "test": "node test/extension.js"
+    "test": "node test/sign-plan.js && node test/extension.js"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

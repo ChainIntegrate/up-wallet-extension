@@ -171,6 +171,8 @@ async function main() {
   try { p = plan(req, k.address, lang); } catch (e) { answer({ error: e && e.code ? e : { code: -32602, message: e.message } }); return; }
   $("title").textContent = p.title;
   if (p.site) $("site").textContent = L(`Richiesta da: ${p.site}`, `Requested by: ${p.site}`);
+  // The warnings first, where they cannot be missed (EXT-02, EXT-03).
+  for (const w of p.warnings || []) $("rows").appendChild(el("div", "⚠️ " + w, "warn"));
   const rows = $("rows");
   for (const [label, value] of p.rows) { const r = el("div", undefined, "row"); r.append(el("div", label, "label"), el("div", value, "value")); rows.appendChild(r); }
   $("account").textContent = L(`Chiave: ${k.address} · ${k.method === "passkey" ? "passkey" : "password"}`, `Key: ${k.address} · ${k.method === "passkey" ? "passkey" : "password"}`);

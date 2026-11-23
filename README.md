@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 2 (0.2.0, the new version announced from 0.2.1): an injected wallet for the sites you connect, the wallet page isolated by the browser; prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 2 (0.2.0, the new version announced from 0.2.1, the signing window's EXT-02 and EXT-03 from 0.2.3): an injected wallet for the sites you connect, the wallet page isolated by the browser; prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -60,7 +60,10 @@ when the user chooses, as the Android app is. So the key can live in the extensi
     passkey gives a PRF value.
 
   For each request the window computes what is signed from the request itself, not from the page's words,
-  and shows it: the message's text, the typed data's domain and content, the transaction's network,
+  and shows it, with its warnings first (from 0.2.3, review of 2026-11-04, EXT-02 and EXT-03: typed data by
+  the type that is signed, a declared `primaryType` that differs refused, only the signed fields shown;
+  the token calls' arguments, transfers and approvals of ERC-20, LSP7, ERC-721, LSP8, ERC-1155 and Permit2,
+  with "unlimited" approvals flagged; every call of a batch; a function the window does not know, said so): the message's text, the typed data's domain and content, the transaction's network,
   recipient, value, function and maximum gas (through the UP's Key Manager, `execute(bytes)`: what the UP
   does, each call's recipient, value and function), the gas-relay operation's recipient, value and function
   (its hash computed there). It asks for the passkey or the password, decrypts the key, signs, checks the

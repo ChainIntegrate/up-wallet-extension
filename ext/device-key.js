@@ -132,7 +132,10 @@ async function personalSign(params) {
 async function signTyped(params) {
   const [a, data] = params || [];
   const n = await currentNet();
-  return ask({ kind: "typed", account: a, data: typeof data === "string" ? data : JSON.stringify(data), chainId: n ? n.chainId : null, site: site() });
+  // The page's UP: a permit or a signed transfer for another address is flagged in the signing window.
+  const upEl = $("upAddress");
+  const up = upEl && ethers.isAddress(upEl.value.trim()) ? ethers.getAddress(upEl.value.trim()) : null;
+  return ask({ kind: "typed", account: a, data: typeof data === "string" ? data : JSON.stringify(data), chainId: n ? n.chainId : null, up, site: site() });
 }
 const big = (v) => (v === undefined || v === null || v === "" ? null : BigInt(v));
 async function sendTransaction(params) {

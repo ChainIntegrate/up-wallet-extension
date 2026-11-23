@@ -234,7 +234,7 @@ let named = null;   // the address whose name the mocked UP keeps
   mark();
   pr = f.evaluate(async ([KM, data]) => { try { return await signerProvider.request({ method: "eth_sendTransaction", params: [{ from: signerAddress, to: KM, data, chainId: "0x2105", gas: "0x9c40" }] }); } catch (e) { return { code: e.code }; } }, [KM, kmData]);
   txt = await shown();
-  ck("a transaction to the Key Manager: the window names what the UP does (execute(bytes), each call's recipient, value and function)", /Key Manager/.test(txt) && txt.includes(ethers.getAddress(KM)) && /la UP esegue/.test(txt) && /2 in un'operazione/.test(txt) && txt.includes(ethers.getAddress(TO) + " · 0.01 ETH") && txt.includes(ethers.getAddress(TO2) + " · 0.0 ETH · 0xa9059cbb"), txt);
+  ck("a transaction to the Key Manager: the window names what the UP does (execute(bytes), each call's recipient, value and function)", /Key Manager/.test(txt) && txt.includes(ethers.getAddress(KM)) && /la UP esegue/.test(txt) && /2 in un'operazione/.test(txt) && txt.includes(ethers.getAddress(TO)) && /0\.01 ETH/.test(txt) && txt.includes(`Invia 0.01 ETH a ${ethers.getAddress(TO)}`) && txt.includes(ethers.getAddress(TO2)) && /Trasferisce 0 \(unità minime del token\) del token/.test(txt), txt);
   await click("#cancel");
   r = await pr;
   ck("rejected: nothing sent", r && r.code === 4001 && raws.length === 1, JSON.stringify(r));
@@ -270,7 +270,7 @@ let named = null;   // the address whose name the mocked UP keeps
   mark();
   await f.evaluate(() => [...document.querySelectorAll("#pkPanel button")].find((b) => /Manda il saldo/.test(b.textContent)).click());
   txt = await shown();
-  ck("sending the balance: the signing window shows a plain transfer to the UP", /Transazione su Base/.test(txt) && txt.includes(UP) && /un semplice invio/.test(txt), txt);
+  ck("sending the balance: the signing window shows a plain transfer to the UP", /Transazione su Base/.test(txt) && txt.includes(UP) && txt.includes(`a ${UP}`) && /Invia 0\.0\d+ ETH a/.test(txt), txt);
   await click("#sign");
   await f.waitForFunction(() => /Inviato alla UP: 0x[0-9a-f]{64}/.test(document.getElementById("pkPanel").innerText), null, { timeout: 15000 }).catch(() => null);
   const swept = raws.length >= 2 ? ethers.Transaction.from(raws[raws.length - 1]) : null;
@@ -340,6 +340,16 @@ let named = null;   // the address whose name the mocked UP keeps
   ck("a signature for another account is refused", Array.isArray(r) && r[0] === 4100, JSON.stringify(r));
   r = await f.evaluate(async ([o]) => { try { await signerProvider.request({ method: "upwallet_signUserOperation", params: [{ op: { ...o, sender: "0x" + "55".repeat(20) }, entryPoint: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789", chainId: 8453 }] }); return "signed"; } catch (e) { return [e.code]; } }, [ser]);
   ck("an operation of another UP is refused", Array.isArray(r) && r[0] === 4100, JSON.stringify(r));
+  // EXT-02 in the real signing window: a permit warned on top; a declared type that is not the one signed refused.
+  const permitTd = { types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "chainId", type: "uint256" }], Permit: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" }] }, primaryType: "Permit", domain: { name: "Tok", chainId: 8453 }, message: { owner: UP, spender: TO, value: "5" } };
+  mark();
+  pr = call("eth_signTypedData_v4", [addr, JSON.stringify(permitTd)]);
+  txt = await shown();
+  const warnBox = await signer.evaluate(() => [...document.querySelectorAll("#rows .warn")].map((e) => e.textContent));
+  ck("EXT-02: a permit: the signing window warns first (PERMESSO DI SPESA), by the type that is signed", warnBox.length >= 1 && /^⚠️ PERMESSO DI SPESA/.test(warnBox[0]) && /Tipo firmato\s*Permit/.test(txt), JSON.stringify(warnBox) + txt);
+  await click("#cancel"); await pr;
+  r = await call("eth_signTypedData_v4", [addr, JSON.stringify({ ...permitTd, primaryType: "Login" })]);
+  ck("EXT-02: a declared primaryType that is not the one signed: refused before anything is shown (4100)", Array.isArray(r) && r[0] === 4100 && /Login/.test(r[1]), JSON.stringify(r));
   r = await call("eth_sign", []);
   const r2 = await call("debug_traceTransaction", ["0x00"]);
   ck("eth_sign and non-read methods: not supported (4200)", r[0] === 4200 && r2[0] === 4200, JSON.stringify([r, r2]));
@@ -456,6 +466,11 @@ let named = null;   // the address whose name the mocked UP keeps
   d2 = await req("wallet_watchAsset", [{}]);
   d3 = await req("wallet_switchEthereumChain", [{ chainId: "0x2a" }]);
   ck("reads answered from the network's RPC; other methods refused (4200); another network refused (4001)", d1.r === "0x2386f26fc10000" && d2.code === 4200 && d3.code === 4001, JSON.stringify([d1, d2, d3]));
+  // EXT-02 in the page (0.14.1): a site's typed data whose declared type is not the one signed is rejected there.
+  const lie = { types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "chainId", type: "uint256" }], TransferWithAuthorization: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "value", type: "uint256" }] }, primaryType: "Login", domain: { name: "USD Coin", chainId: 8453 }, message: { from: UP, to: TO, value: "1000000" } };
+  d1 = await req("eth_signTypedData_v4", [UP, JSON.stringify(lie)]);
+  const lieLog = await f.evaluate(() => document.getElementById("log").textContent);
+  ck("EXT-02 (page): a site's typed data declared \"Login\" but signing a TransferWithAuthorization: rejected by the page (4001)", d1.code === 4001 && /dichiara il tipo "Login" ma si firmerebbe "TransferWithAuthorization"/.test(lieLog), JSON.stringify(d1) + lieLog.slice(-300));
   // personal_sign from the site: the page's request window, then the signing window, which names the site.
   const dsig = dapp.evaluate(async (UP) => { try { return { r: await window.__upw.request({ method: "personal_sign", params: ["0x" + Array.from(new TextEncoder().encode("hello dApp"), (b) => b.toString(16).padStart(2, "0")).join(""), UP] }) }; } catch (e) { return { code: e.code, m: e.message }; } }, UP);
   await f.waitForFunction(() => !document.getElementById("requestModal").hidden && !document.getElementById("signBtn").disabled, null, { timeout: 15000 });
