@@ -1,15 +1,16 @@
 // UP Wallet extension: this computer's key as the page's signing wallet, instead of MetaMask.
 // The key is a controller of the UP (authorized from the site's Backup page with no admin permissions). It is
-// kept and used only by the extension's signing window (signer.html): this file never sees it. For every
-// signature it opens that window with the request; the window shows what is signed, asks for the passkey or
-// the password, and answers with the signature. Transactions are prepared here (nonce, gas, fees from the
-// network's RPC), signed there, and sent here. Announced to the page through EIP-6963, as a browser wallet is:
-// the page's checks and confirmation window are unchanged.
+// kept and used only by the extension's signing window (signer.html), out of this page's reach: the page is a
+// sandboxed page of the extension (EXT-01), with no chrome.* API. For every signature this file sends a
+// structured request to the extension's host (wallet.html, ext/host.js, through window.__upwBridge), which opens
+// the signing window; the window computes again what is signed, shows it, asks for the passkey or the password,
+// and answers with the signature. Transactions are prepared here (nonce, gas, fees from the network's RPC),
+// signed there, and sent here. Announced to the page through EIP-6963, as a browser wallet is: the page's checks
+// and confirmation window are unchanged.
 // Bundled by scripts/build.js (esbuild) into dist/ext/device-key.js; loaded after chains.js and ethers.
-const api = globalThis.chrome;
+const bridge = window.__upwBridge;
 document.documentElement.classList.add("computer-key");
 const SITE = window.__upwalletSite || "https://crosschain-lukso.chainintegrate.it/";
-const STORE = "deviceKey";
 const ACK_KEY = "upwallet.computerkey.ack";
 const ACK_VERSION = "1";
 const INFO = Object.freeze({
@@ -95,40 +96,18 @@ const rpcError = (code, message) => Object.assign(new Error(message), { code });
 // ---- the key's address (the key itself stays in the signing window)
 let address = null, method = null;
 async function status() {
-  const k = (await api.storage.local.get(STORE))[STORE];
+  const k = bridge ? await bridge.call("key") : null;
   address = k && k.address ? ethers.getAddress(k.address) : null;
   method = k ? k.method : null;
   return { exists: !!address, address, method };
 }
 const sameAddr = (a) => typeof a === "string" && ethers.isAddress(a) && address && ethers.getAddress(a) === address;
 
-// One request to the signing window: it answers with { result } or { error }; closing it rejects.
+// One request to the signing window, through the host: it answers with the result, or rejects (closing the
+// window rejects with 4001).
 async function ask(req) {
-  const id = crypto.randomUUID();
-  await api.storage.session.set({ ["req:" + id]: { ...req, site: req.site || null, lang: en() ? "en" : "it" } });
-  try {
-    return await new Promise((ok, no) => {
-      let winId = null;
-      const done = (fn, v) => { api.runtime.onMessage.removeListener(onMsg); api.windows.onRemoved.removeListener(onGone); fn(v); };
-      const onMsg = (m) => {
-        if (!m || m.type !== "signer-result" || m.id !== id) return;
-        if (m.error) done(no, rpcError(m.error.code || -32603, m.error.message || "error")); else done(ok, m.result);
-      };
-      const onGone = (w) => { if (w === winId) done(no, rpcError(4001, "User rejected the request.")); };
-      api.runtime.onMessage.addListener(onMsg);
-      api.windows.onRemoved.addListener(onGone);
-      // A window at the top right of the browser window, under the toolbar, as browser wallets do.
-      // Wide and tall enough for the browser's own passkey dialogs (Windows Hello's PIN among them), which open over it.
-      const W = 520, H = 680;
-      api.windows.getCurrent().catch(() => null).then((cur) => {
-        const left = cur && cur.left != null ? cur.left + Math.max(0, cur.width - W - 12) : Math.round(window.screenX + window.outerWidth - W - 12);
-        const top = cur && cur.top != null ? cur.top + 72 : Math.round(window.screenY + 72);
-        return api.windows.create({ url: api.runtime.getURL("ext/signer.html#" + encodeURIComponent(id)), type: "popup", width: W, height: H, left: Math.max(0, left), top: Math.max(0, top), focused: true });
-      })
-        .then((win) => { winId = win.id; })
-        .catch((e) => done(no, rpcError(-32603, e.message)));
-    });
-  } finally { api.storage.session.remove("req:" + id).catch(() => null); }
+  if (!bridge) throw rpcError(-32603, "the wallet is not open in the extension");
+  return bridge.call("sign", { ...req, site: req.site || null, lang: en() ? "en" : "it" });
 }
 // The dApp asking, for the signing window's header: the WalletConnect session the page's request window is for.
 const site = () => (typeof window.__upwalletRequestSite === "string" ? window.__upwalletRequestSite.slice(0, 200) : null);

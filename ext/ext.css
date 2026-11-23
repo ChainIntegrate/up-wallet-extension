@@ -10,3 +10,5 @@ html.in-extension .top-row { align-items: center; margin-bottom: 12px; }
 html.in-extension h1 { font-size: 17px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html.in-extension .subtitle { display: none; }
 html.in-extension body { padding-top: 12px; padding-left: 14px; padding-right: 14px; }
+/* No WalletConnect in the extension (2026-11-22): dApps will reach the wallet as an injected wallet instead. */
+html.in-extension [data-go="dapp"], html.in-extension .panel[data-view="dapp"] { display: none; }

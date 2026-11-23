@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UP Wallet</title>
+<link rel="icon" href="favicon.ico">
+<style>
+  html, body { margin: 0; height: 100%; background: #0f1115; }
+  body { display: flex; flex-direction: column; }
+  #banner { font: 13px/1.4 system-ui, sans-serif; background: #3b2a0a; color: #fde7b0; padding: 8px 12px; display: flex; gap: 8px; align-items: center; }
+  #banner[hidden] { display: none; }
+  #banner button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 0; background: #f59e0b; color: #111; cursor: pointer; }
+  iframe { flex: 1; border: 0; width: 100%; display: block; }
+</style>
+</head>
+<body>
+<div id="banner" hidden><span id="bannerText"></span><button type="button" id="bannerBtn"></button></div>
+<script src="ext/host.js"></script>
+</body>
+</html>

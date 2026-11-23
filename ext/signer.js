@@ -7,8 +7,9 @@
 //   - or a password, the fallback for browsers or authenticators without PRF: PBKDF2-SHA256, 600,000 rounds.
 // For each request this window shows what is signed, computed here from the request itself (not from the
 // wallet page's words), asks for the passkey or the password, decrypts the key, signs, checks the signature,
-// and answers the wallet page with the signature only. The wallet page (with WalletConnect and the decoders)
-// never sees the key.
+// and answers the wallet's host (wallet.html) with the signature only. The wallet page (with the decoders) is a
+// sandboxed page of the extension: it cannot read the key's storage, use the passkey or reach this window
+// (review of 2026-11-04, EXT-01); it can only ask the host for a structured request, shown here.
 import { ethers } from "ethers";
 import { plan } from "./sign-plan.js";
 

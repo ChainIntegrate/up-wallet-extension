@@ -5,14 +5,15 @@
 //   - the page's inline scripts become files: an extension page runs no inline script (Manifest V3's
 //     Content-Security-Policy, script-src 'self'), so its <meta> policy is dropped for the manifest's;
 //   - config.js is generated from ext-config.json;
-//   - ext/ext-shim.js (relay calls and links to the site) and ext/device-key.js (this computer's key as the
-//     page's signing wallet, bundled with esbuild) are loaded by the page;
+//   - the page is a sandboxed page of the extension (manifest "sandbox"; review of 2026-11-04, EXT-01): an
+//     opaque origin with no chrome.* API, held in a frame by wallet.html with ext/host.js, the small privileged
+//     page that answers its structured requests (its settings, the key's address, a request for the signing
+//     window, the site's relay); ext/sandbox-shim.js, its first script, gives it its storage and the bridge;
+//   - ext/ext-shim.js (relay calls through the host, links to the site) and ext/device-key.js (this computer's
+//     key as the page's signing wallet, bundled with esbuild) are loaded by the page;
 //   - ext/signer.html with ext/signer.js (bundled, with its own ethers): the signing window, the only place
 //     where the key is opened;
-//   - the WalletConnect metadata names the site instead of the extension's origin;
-//   - ext/wc-host.html with ext/wc-host.js: the WalletConnect client in an offscreen document, which keeps the
-//     dApps' sessions while the wallet is closed; ext/wc-remote.js, loaded after the WalletKit bundle, gives the
-//     page that client instead of its own;
+//   - no WalletConnect (2026-11-22): the WalletKit bundle is not loaded, its panel hidden (ext/ext.css);
 //   - manifest.json, with the public key that fixes the extension's id: its passkey belongs to that id.
 //
 //   node scripts/build.js                         clones Cross_Chain at the pinned commit into upstream/
@@ -31,9 +32,10 @@ const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, "ext-config.json"), "utf8
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
 const PAGE = "up-wallet.html";
+const HOST = "wallet.html";
 const FILES = [PAGE, "theme.js", "chains.js", "asset-list.js", "usd-price.js", "token-image.js", "backup-check.js",
   "gas-relay-client.js", "call-decode.js", "abi-decode.js",
-  "vendor/walletkit-1.6.0.min.js", "vendor/qrcode-generator-1.4.4.js", "banner.png", "logo.png", "favicon.ico"];
+  "vendor/qrcode-generator-1.4.4.js", "banner.png", "logo.png", "favicon.ico"];
 const DIRS = ["chain-logos"];
 const ETHERS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js";
 const ETHERS_LOCAL = "vendor/ethers-6.13.4.umd.min.js";
@@ -86,6 +88,11 @@ async function main() {
   }
 
   let html = fs.readFileSync(path.join(OUT, PAGE), "utf8");
+  // No WalletConnect in the extension: the page's WalletKit bundle is not loaded (nor copied).
+  const wk = /<script src="vendor\/walletkit-1\.6\.0\.min\.js" integrity="sha384-[^"]+"><\/script>\n?/;
+  if (!wk.test(html)) throw new Error("WalletKit script tag not found in the page");
+  html = html.replace(wk, "");
+  if (/walletkit/i.test(html.match(/<script[^>]*>/g).join(""))) throw new Error("a WalletKit script tag is left in the page");
   const missing = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])
     .filter((s) => !/^https?:/.test(s) && s !== "config.js" && !FILES.includes(s));
   if (missing.length) throw new Error(`the page loads ${missing.join(", ")}: add to FILES in scripts/build.js`);
@@ -102,16 +109,10 @@ async function main() {
 
   // The extension's additions, as in the Android app: the shim right after theme.js, before any other script
   // of the page; the computer key after config.js, once chains.js and ethers are loaded.
-  html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>\n<link rel="stylesheet" href="ext/ext.css">', "theme.js script tag");
+  // The sandbox's storage and bridge before any script of the page (theme.js reads the storage at once).
+  html = replaceOnce(html, '<script src="theme.js"></script>', '<script src="ext/sandbox-shim.js"></script>\n<script src="theme.js"></script>\n<script src="ext/ext-shim.js"></script>\n<link rel="stylesheet" href="ext/ext.css">', "theme.js script tag");
   html = replaceOnce(html, '<script src="config.js"></script>', '<script src="config.js"></script>\n<script src="ext/device-key.js"></script>', "config.js script tag");
-  // WalletConnect: the extension's client (ext/wc-host.js) instead of the page's own, right after the bundle.
-  const wk = html.match(/<script src="vendor\/walletkit-1\.6\.0\.min\.js" integrity="(sha384-[^"]+)"><\/script>/);
-  if (!wk) throw new Error("WalletKit script tag not found in the page");
-  html = html.replace(wk[0], wk[0] + '\n<script src="ext/wc-remote.js"></script>');
   html = replaceOnce(html, "const PAGE_COMMIT = null;", `const PAGE_COMMIT = ${JSON.stringify(upstream.commit.slice(0, 7))};`, "PAGE_COMMIT");
-  // WalletConnect metadata: dApps are shown the site (its address and icon), not the extension's origin.
-  html = replaceOnce(html, "      url: location.origin,\n      icons: [location.origin + \"/favicon.ico\"],",
-    `      url: ${JSON.stringify(site.replace(/\/$/, ""))},\n      icons: [${JSON.stringify(site + "favicon.ico")}],`, "WalletConnect metadata (url, icons)");
 
   // Manifest V3 runs no inline script in an extension page: each one becomes a file, in the same place.
   // The page's own <meta> policy (inline scripts by hash) goes: the manifest's policy (script-src 'self')
@@ -133,11 +134,10 @@ async function main() {
   fs.mkdirSync(path.join(OUT, "ext", "icons"), { recursive: true });
   fs.writeFileSync(path.join(OUT, "ext", "ext-shim.js"),
     fs.readFileSync(path.join(ROOT, "ext", "ext-shim.js"), "utf8").replace("__SITE__", site).replace("__PAGE__", PAGE));
-  for (const f of ["background.js", "signer.html", "ext.css", "wc-remote.js"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
-  fs.writeFileSync(path.join(OUT, "ext", "wc-host.js"), fs.readFileSync(path.join(ROOT, "ext", "wc-host.js"), "utf8").replace("__SITE__", site));
-  // The same WalletKit file as the page, with the page's integrity hash.
-  fs.writeFileSync(path.join(OUT, "ext", "wc-host.html"), replaceOnce(fs.readFileSync(path.join(ROOT, "ext", "wc-host.html"), "utf8"),
-    '<script src="../vendor/walletkit-1.6.0.min.js"></script>', `<script src="../vendor/walletkit-1.6.0.min.js" integrity="${wk[1]}"></script>`, "WalletKit script tag in wc-host.html"));
+  for (const f of ["background.js", "signer.html", "ext.css", "sandbox-shim.js"]) fs.copyFileSync(path.join(ROOT, "ext", f), path.join(OUT, "ext", f));
+  // The host: the privileged page that holds the sandboxed wallet page.
+  fs.writeFileSync(path.join(OUT, "ext", "host.js"), fs.readFileSync(path.join(ROOT, "ext", "host.js"), "utf8").replace("__SITE__", site));
+  fs.copyFileSync(path.join(ROOT, "ext", "wallet.html"), path.join(OUT, HOST));
   for (const f of fs.readdirSync(path.join(ROOT, "ext", "icons"))) fs.copyFileSync(path.join(ROOT, "ext", "icons", f), path.join(OUT, "ext", "icons", f));
   await bundle(path.join(ROOT, "ext", "device-key.js"), path.join(OUT, "ext", "device-key.js"));
   await bundle(path.join(ROOT, "ext", "signer.js"), path.join(OUT, "ext", "signer.js"));
@@ -158,10 +158,16 @@ async function main() {
     icons,
     action: { default_title: "UP Wallet", default_icon: icons },
     background: { service_worker: "ext/background.js" },
-    side_panel: { default_path: PAGE },
-    permissions: ["storage", "sidePanel", "contextMenus", "offscreen"],
+    side_panel: { default_path: HOST },
+    permissions: ["storage", "sidePanel", "contextMenus"],
     host_permissions: [site + "*"],
-    content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'; base-uri 'none'; frame-ancestors 'none'" },
+    // The wallet page: sandboxed (opaque origin, no chrome.* API), only framed by the host, its scripts only the
+    // extension's own files. Popups (links to the site and explorers) open outside the sandbox.
+    sandbox: { pages: [PAGE] },
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+      sandbox: "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",
+    },
     minimum_chrome_version: "121",
   };
   fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
