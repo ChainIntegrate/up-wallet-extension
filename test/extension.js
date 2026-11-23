@@ -4,6 +4,8 @@
 // operations are signed there; refusals and cancellations. Network calls to the RPCs are mocked.
 //   PLAYWRIGHT=/path/to/playwright node test/extension.js
 "use strict";
+// The service worker's requests routed too (its reads for the connected sites), as newer Playwright does by itself.
+process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = "1";
 const path = require("path");
 const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 const { ethers } = require("ethers");
@@ -26,7 +28,7 @@ const GDB = new ethers.Interface(["function getDataBatch(bytes32[]) view returns
 let named = null;   // the address whose name the mocked UP keeps
 
 (async () => {
-  const ctx = await chromium.launchPersistentContext("", { channel: "chromium", headless: true, args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`] });
+  const ctx = await chromium.launchPersistentContext("", { ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : { channel: "chromium" }), headless: true, args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`] });
   const sw = ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker", { timeout: 15000 });
   const id = new URL(sw.url()).host;
   const errs = [], csp = [], raws = [];
@@ -410,15 +412,14 @@ let named = null;   // the address whose name the mocked UP keeps
   d1 = await req("eth_getBalance", [UP, "latest"]);
   d2 = await req("wallet_watchAsset", [{}]);
   d3 = await req("wallet_switchEthereumChain", [{ chainId: "0x2a" }]);
-  // The service worker's reads may reach the real network in CI (Playwright does not route a service worker's
-  // requests in every version): any balance is a pass, read from the session's network.
-  ck("reads answered from the network's RPC; other methods refused (4200); another network refused (4001)", /^0x[0-9a-f]+$/.test(d1.r || "") && d2.code === 4200 && d3.code === 4001, JSON.stringify([d1, d2, d3]));
+  ck("reads answered from the network's RPC; other methods refused (4200); another network refused (4001)", d1.r === "0x2386f26fc10000" && d2.code === 4200 && d3.code === 4001, JSON.stringify([d1, d2, d3]));
   // personal_sign from the site: the page's request window, then the signing window, which names the site.
   const dsig = dapp.evaluate(async (UP) => { try { return { r: await window.__upw.request({ method: "personal_sign", params: ["0x" + Array.from(new TextEncoder().encode("hello dApp"), (b) => b.toString(16).padStart(2, "0")).join(""), UP] }) }; } catch (e) { return { code: e.code, m: e.message }; } }, UP);
   await f.waitForFunction(() => !document.getElementById("requestModal").hidden && !document.getElementById("signBtn").disabled, null, { timeout: 15000 });
   const modal = await f.evaluate(() => document.getElementById("requestModal").innerText);
   mark();
-  await f.click("#signBtn");
+  // Pressed from the page's code: Playwright 1.56 (CI) does not deliver a mouse click inside the sandboxed frame.
+  await f.$eval("#signBtn", (b) => b.click());
   txt = await shown();
   ck("a site's message: the wallet's request window names the site, the signing window names it as Chrome gave it", /dapp\.test/.test(modal) && /hello dApp/.test(modal) && /Richiesta da: https:\/\/dapp\.test/.test(txt) && /hello dApp/.test(txt), modal.slice(0, 300) + " / " + txt);
   await click("#sign");
