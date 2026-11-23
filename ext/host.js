@@ -14,8 +14,9 @@
 //   - "relay": the site's relay service (gas paid by the site), on its known paths only;
 //   - "rpc": a JSON-RPC call to one of the few network RPCs that answer the site but not a sandboxed page
 //     (origin "null"; checked on 2026-11-23): only those URLs, POST only (RPC_PROXY, set by scripts/build.js);
-//   - "alchemy": the site's Alchemy key (token lists, NFTs), which accepts only allowed origins, not "null":
-//     its two endpoint shapes only (ALCHEMY), GET or POST;
+//   - "alchemy": the extension's Alchemy key (token lists, NFTs), which accepts only the extension's origin,
+//     not "null": its two endpoint shapes only (ALCHEMY), GET or POST, as cross-origin requests (no host
+//     permission, so that Chrome sends the Origin header on the GETs too);
 //   - "focus": bringing the wallet to the front;
 //   - "dapp-*" (phase 2): the requests of the connected sites, passed from the service worker to the page and
 //     its answers back (the site's origin is always the one Chrome gave the service worker, never the page's
@@ -223,7 +224,7 @@
       case "alchemy": {
         const method = a && a.method === "POST" ? "POST" : "GET";
         if (!a || !str(a.url, 2300) || !ALCHEMY.test(a.url) || (method === "POST" && !str(a.body, MAX_BODY))) throw fail(-32602, "not an Alchemy call");
-        const r = await fetch(a.url, { method, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer",
+        const r = await fetch(a.url, { method, mode: "cors", cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer",
           headers: method === "POST" ? { "content-type": "application/json", accept: "application/json" } : { accept: "application/json" }, body: method === "POST" ? a.body : undefined });
         const body = await r.text();
         return { status: r.status, body: body.length > MAX_ANSWER ? "" : body };

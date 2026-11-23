@@ -79,7 +79,9 @@ when the user chooses, as the Android app is. So the key can live in the extensi
   extension has the site in its host permissions, and the relayer and the sponsor service accept the
   extension's origin. The networks' RPCs answer the sandboxed page as they answer any site (checked on
   2026-11-23 for every network of the page); Ronin's, the one that does not, goes through the host, and so
-  does Alchemy (token lists, NFTs: the site's key accepts only allowed origins; from 0.2.5). Chrome lets the
+  does Alchemy (token lists, NFTs: the extension's own key accepts only the extension's origin; from 0.2.5,
+  as an ordinary cross-origin request from 0.2.6, since Chrome leaves the Origin header out of a GET to a host
+  the extension has permission for). Chrome lets the
   user limit an extension's "Site access": then the wallet says so at the top, with "Allow", which asks for
   it again (without it the relay calls fail, blocked by CORS).
 - **A new version announced** (from 0.2.1; Cross_Chain `WALLET-BACKLOG.md` item 14): at every opening the host
