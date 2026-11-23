@@ -34,7 +34,7 @@ let named = null;   // the address whose name the mocked UP keeps
   const errs = [], csp = [], raws = [];
   // The wallet page is sandboxed (origin "null"): the RPCs answer it as they answer any site, with CORS.
   const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" };
-  const relayOrigins = [], roninFrames = [];
+  const relayOrigins = [], roninFrames = [], alchemyFrames = [];
   // What the site says is the latest extension: by default the version under test (nothing to announce).
   const OWN = "https://github.com/ChainIntegrate/up-wallet-extension/releases/";
   const myVersion = JSON.parse(require("fs").readFileSync(path.join(DIST, "manifest.json"), "utf8")).version;
@@ -72,6 +72,8 @@ let named = null;   // the address whose name the mocked UP keeps
       };
       return r.fulfill({ contentType: "application/json", headers: CORS, body: JSON.stringify(Array.isArray(q) ? q.map(one) : one(q)) });
     }
+    // Alchemy answers the site's key only for allowed origins, not a sandboxed page's "null": reached by the host.
+    if (/\.g\.alchemy\.com$/.test(u.host)) { alchemyFrames.push((r.request().frame() && r.request().frame().url()) || "?"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "alchemy-ok" }) }); }
     // Ronin's RPC answers the site but not a sandboxed page (no CORS for origin "null"): reached by the host.
     if (u.host === "api.roninchain.com") { roninFrames.push((r.request().frame() && r.request().frame().url()) || "?"); const q = JSON.parse(r.request().postData() || "{}"); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: q.id, result: "0x7e4" }) }); }
     // The site's relay service: the latest versions (a new release announced in the wallet).
@@ -385,6 +387,8 @@ let named = null;   // the address whose name the mocked UP keeps
     out.relay = await fetch("relay/info").then((r) => r.json(), (e) => e.message);
     out.ronin = await new ethers.JsonRpcProvider("https://api.roninchain.com/rpc", 2020, { staticNetwork: true }).send("eth_chainId", []).catch((e) => "err " + e.message);
     out.notProxied = await tryCall("rpc", { url: "https://evil.example/rpc", body: "{}" });
+    out.alchemy = await fetch("https://arb-mainnet.g.alchemy.com/v2/testkey1234", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "alchemy_getTokenBalances", params: [] }) }).then((r) => r.json(), (e) => e.message);
+    out.notAlchemy = await tryCall("alchemy", { url: "https://evil.example/v2/testkey1234", method: "GET" });
     out.pair = await WalletKitBundle.WalletKit.init().then((k) => k.pair({ uri: "wc:x" })).then(() => "paired", (e) => e.message);
     out.wcUri = getComputedStyle(document.getElementById("wcUri")).display;
     return out;
@@ -396,6 +400,7 @@ let named = null;   // the address whose name the mocked UP keeps
   ck("EXT-01: the host gives the key's address and method only", iso.key.ok && Object.keys(iso.key.ok).sort().join() === "address,method" && iso.key.ok.address === addr, JSON.stringify(iso.key));
   ck("EXT-01: the host refuses anything else (unknown requests, kinds, relay paths)", iso.unknown.code === 4200 && iso.badKind.code === -32602 && iso.badRelay.code === -32602 && iso.otherSite.code === -32602, JSON.stringify(iso));
   ck("the site's relay is reached through the host (wallet.html), not from the sandboxed page", iso.relay && iso.relay.test === "relay-info" && relayOrigins.length > 0 && relayOrigins.every((o) => o === `chrome-extension://${id}/wallet.html`), JSON.stringify({ relay: iso.relay, relayOrigins }));
+  ck("Alchemy (the site's key: allowed origins only) reached through the host; no other URL", iso.alchemy && iso.alchemy.result === "alchemy-ok" && alchemyFrames.length > 0 && alchemyFrames.every((x) => x === `chrome-extension://${id}/wallet.html`) && iso.notAlchemy.code === -32602, JSON.stringify({ a: iso.alchemy, alchemyFrames, n: iso.notAlchemy }));
   ck("Ronin's RPC (no CORS for a sandboxed page) reached through the host; no other URL", iso.ronin === "0x7e4" && roninFrames.length > 0 && roninFrames.every((x) => x === `chrome-extension://${id}/wallet.html`) && iso.notProxied.code === -32602, JSON.stringify({ ronin: iso.ronin, roninFrames, np: iso.notProxied }));
   ck("no WalletConnect in the extension: the page's client is the connected sites' stand-in, pairing refused, its link field hidden", /niente WalletConnect/i.test(iso.pair) && iso.wcUri === "none", JSON.stringify(iso));
   const direct = await ctx.newPage();

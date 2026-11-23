@@ -14,6 +14,8 @@
 //   - "relay": the site's relay service (gas paid by the site), on its known paths only;
 //   - "rpc": a JSON-RPC call to one of the few network RPCs that answer the site but not a sandboxed page
 //     (origin "null"; checked on 2026-11-23): only those URLs, POST only (RPC_PROXY, set by scripts/build.js);
+//   - "alchemy": the site's Alchemy key (token lists, NFTs), which accepts only allowed origins, not "null":
+//     its two endpoint shapes only (ALCHEMY), GET or POST;
 //   - "focus": bringing the wallet to the front;
 //   - "dapp-*" (phase 2): the requests of the connected sites, passed from the service worker to the page and
 //     its answers back (the site's origin is always the one Chrome gave the service worker, never the page's
@@ -26,6 +28,7 @@
   const api = globalThis.chrome;
   const SITE = "__SITE__";   // filled in by scripts/build.js from ext-config.json
   const RPC_PROXY = new Set(__RPC_PROXY__);   // filled in by scripts/build.js
+  const ALCHEMY = /^https:\/\/[a-z0-9-]+\.g\.alchemy\.com\/(v2\/[A-Za-z0-9_-]{8,128}|nft\/v3\/[A-Za-z0-9_-]{8,128}\/getNFTsForOwner\?[^#\s"<>]{0,2000})$/;
   const PAGE = "up-wallet.html";
   const KINDS = new Set(["create", "remove", "message", "typed", "tx", "userop"]);
   const RELAY = /^relay\/(info|send|receipt|sponsor\/(check|sign|email))(\?hash=0x[0-9a-fA-F]{64})?$/;
@@ -216,6 +219,14 @@
       case "dapp-disconnect": {
         if (!a || !ORIGIN.test(a.origin || "")) throw fail(-32602, "bad origin");
         return bgCall("remove-site", { origin: a.origin });
+      }
+      case "alchemy": {
+        const method = a && a.method === "POST" ? "POST" : "GET";
+        if (!a || !str(a.url, 2300) || !ALCHEMY.test(a.url) || (method === "POST" && !str(a.body, MAX_BODY))) throw fail(-32602, "not an Alchemy call");
+        const r = await fetch(a.url, { method, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer",
+          headers: method === "POST" ? { "content-type": "application/json", accept: "application/json" } : { accept: "application/json" }, body: method === "POST" ? a.body : undefined });
+        const body = await r.text();
+        return { status: r.status, body: body.length > MAX_ANSWER ? "" : body };
       }
       case "focus": {
         const tab = await api.tabs.getCurrent().catch(() => null);

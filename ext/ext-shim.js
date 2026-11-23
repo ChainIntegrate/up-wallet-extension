@@ -10,6 +10,9 @@
   const bridge = window.__upwBridge;
   // The network RPCs that answer the site but not a sandboxed page: their calls go through the host.
   const RPC_PROXY = new Set(__RPC_PROXY__);   // filled in by scripts/build.js
+  // Alchemy (token lists, NFTs): the site's key accepts only allowed origins, not a sandboxed page's "null"
+  // (seen on 0.2.4): its calls go through the host too. The same pattern as ext/host.js.
+  const ALCHEMY = /^https:\/\/[a-z0-9-]+\.g\.alchemy\.com\/(v2\/[A-Za-z0-9_-]{8,128}|nft\/v3\/[A-Za-z0-9_-]{8,128}\/getNFTsForOwner\?[^#\s"<>]{0,2000})$/;
   document.documentElement.classList.add("in-extension");
   window.__upwalletSite = SITE;
   // The extension's version, for the version line at the bottom of the page (up-wallet.html, renderVersion).
@@ -20,6 +23,13 @@
     const url = typeof input === "string" ? input : input instanceof Request ? input.url : null;
     const o = init || {};
     const method = String(o.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+    if (url !== null && ALCHEMY.test(url) && (method === "GET" || method === "POST") && bridge) {
+      const b = o.body;
+      const body = method === "POST" ? (typeof b === "string" ? b : b instanceof ArrayBuffer || ArrayBuffer.isView(b) ? new TextDecoder().decode(b) : String(b ?? "")) : undefined;
+      let r;
+      try { r = await bridge.call("alchemy", { url, method, body }); } catch (e) { throw new TypeError("Failed to fetch"); }
+      return new Response(r.body, { status: r.status, headers: { "content-type": "application/json" } });
+    }
     if (url !== null && RPC_PROXY.has(url) && method === "POST" && bridge) {
       // ethers sends the body as bytes.
       const b = o.body;

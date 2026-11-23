@@ -170,7 +170,8 @@ async function main() {
     // scripting and activeTab: the injected wallet (phase 2), on the sites the user connects one by one, each
     // with its own permission (optional_host_permissions, asked for that site only).
     permissions: ["storage", "sidePanel", "contextMenus", "scripting", "activeTab"],
-    host_permissions: [site + "*", ...RPC_PROXY.map((u) => new URL(u).origin + "/*")],
+    // The site, the proxied RPCs and Alchemy (the site's key, through the host: ext/host.js).
+    host_permissions: [site + "*", ...RPC_PROXY.map((u) => new URL(u).origin + "/*"), "https://*.g.alchemy.com/*"],
     optional_host_permissions: ["https://*/*"],
     // The wallet page: sandboxed (opaque origin, no chrome.* API), only framed by the host, its scripts only the
     // extension's own files. Popups (links to the site and explorers) open outside the sandbox.
