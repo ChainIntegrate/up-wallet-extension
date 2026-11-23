@@ -19,15 +19,25 @@ refuses every signature and transaction (4001). Every call is logged in the page
    - in the console (F12): which methods did the dApp call (a network switch? a sign-in signature, refused here)?
 3. Remove the extension.
 
-| dApp | Listed? (section) | Connects, shows the address? | Methods asked (console) |
-|---|---|---|---|
-| hup.social | | | |
-| app.morpho.org | | | |
-| aerodrome.finance | | | |
-| kyberswap.com | | | |
-| yieldyak.com | | | |
-| app.benqi.fi | | | |
-| revoke.cash | | | |
-| app.uniswap.org | | | |
+## Result (2026-11-22, the maintainer's Chrome on Windows, MetaMask and LUKSO's extension also installed)
+
+| dApp | Listed and connects | Methods asked |
+|---|---|---|
+| hup.social | Yes | `wallet_requestPermissions`, `eth_requestAccounts`, `wallet_switchEthereumChain` (to LUKSO); a "like" sent as `eth_sendTransaction` from the UP (`batchLike`), refused here as expected |
+| app.morpho.org | Yes | permissions, accounts, network switch |
+| aerodrome.finance | **No**: its "Browser wallet" opens a fixed list (MetaMask, WalletConnect, Coinbase Wallet, Binance Wallet); it does not use EIP-6963 | — |
+| kyberswap.com | Yes | permissions, accounts, network switch |
+| yieldyak.com | Yes | permissions, accounts, network switch (also a change of network made by the user) |
+| app.benqi.fi | Yes | permissions, accounts, network switch |
+| revoke.cash | Yes | permissions, accounts, `wallet_getCapabilities` (EIP-5792; refused, no harm) |
+| app.uniswap.org | Yes | permissions, accounts, `wallet_getCapabilities` (refused: a warning in its console, the connection works) |
+| pro.aave.com, app.aave.com | Yes | permissions, accounts, network switch |
+| app.merkl.xyz | Yes | permissions, accounts |
+| AStocks | No reaction during the test | — |
+
+Every dApp that lists it asks the same few methods: `wallet_requestPermissions` / `eth_requestAccounts`,
+`eth_accounts`, `eth_chainId`, `wallet_switchEthereumChain`; two ask `wallet_getCapabilities` (EIP-5792) and
+work without it. None asked for a sign-in signature at connection.
+Aerodrome is the one dApp in use that does not list it.
 
 The `rdns` (`it.chainintegrate.upwallet`) and the name are the ones the real provider would use.
