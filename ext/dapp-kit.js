@@ -17,6 +17,7 @@
   const handlers = {};
   const sessions = {};          // topic → a session in WalletKit's shape
   const proposals = new Map();  // request number → { origin, method }
+  const switching = new Set();    // request numbers of wallet_switchEthereumChain sent to the page
   const queue = [];             // requests before the page's checks are set up
   let sites = [], kitReady = false, note = "";
   const topicOf = (o) => "dapp:" + o;
@@ -59,6 +60,13 @@
     },
     async respondSessionRequest({ response }) {
       if (!response) return;
+      // Another network refused: the page answers 4001, right for WalletConnect. For an injected wallet 4001
+      // means "the user rejected", and wagmi's connect (Aave and many dApps) then drops the whole connection;
+      // 4901 (not connected to that chain) lets it go on, on the wallet's network (seen on app.aave.com, 0.2.3).
+      if (switching.delete(response.id) && response.error && (response.error.code === 4001 || response.error.code === 5000)) {
+        await refuse(response.id, 4901, response.error.message || "UP Wallet is on another network: choose it in the wallet.");
+        return;
+      }
       // WalletConnect's "rejected" (5000) is EIP-1193's 4001 for an injected wallet.
       if (response.error) await refuse(response.id, response.error.code === 5000 ? 4001 : response.error.code, response.error.message);
       else await answer(response.id, response.result);
@@ -113,6 +121,7 @@
     }
     const s = sessions[topic];
     if (!s) { refuse(n, 4100, "Connect UP Wallet first."); return; }
+    if (method === "wallet_switchEthereumChain") switching.add(n);
     emit("session_request", { topic, id: n, verifyContext, params: { request: { method, params }, chainId: s.namespaces.eip155.chains[0] } });
   }
   bridge.on("dapp-request", (r) => {

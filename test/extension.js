@@ -465,7 +465,8 @@ let named = null;   // the address whose name the mocked UP keeps
   d1 = await req("eth_getBalance", [UP, "latest"]);
   d2 = await req("wallet_watchAsset", [{}]);
   d3 = await req("wallet_switchEthereumChain", [{ chainId: "0x2a" }]);
-  ck("reads answered from the network's RPC; other methods refused (4200); another network refused (4001)", d1.r === "0x2386f26fc10000" && d2.code === 4200 && d3.code === 4001, JSON.stringify([d1, d2, d3]));
+  const d4 = await req("wallet_addEthereumChain", [{ chainId: "0x1" }]);
+  ck("reads answered from the network's RPC; other methods refused (4200); another network refused with 4901, not 4001 (wagmi's connect drops the connection on 4001)", d1.r === "0x2386f26fc10000" && d2.code === 4200 && d3.code === 4901 && d4.code === 4901, JSON.stringify([d1, d2, d3, d4]));
   // EXT-02 in the page (0.14.1): a site's typed data whose declared type is not the one signed is rejected there.
   const lie = { types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "chainId", type: "uint256" }], TransferWithAuthorization: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "value", type: "uint256" }] }, primaryType: "Login", domain: { name: "USD Coin", chainId: 8453 }, message: { from: UP, to: TO, value: "1000000" } };
   d1 = await req("eth_signTypedData_v4", [UP, JSON.stringify(lie)]);

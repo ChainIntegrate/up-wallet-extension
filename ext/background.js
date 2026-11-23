@@ -130,7 +130,8 @@ async function onDapp(port, m) {
       case "wallet_requestPermissions": if (s) return reply({ result: [{ parentCapability: "eth_accounts" }] }); break;
       case "wallet_addEthereumChain": {
         if (params[0] && Number(params[0].chainId) === chainId) return reply({ result: null });
-        return reply({ error: err(4001, "UP Wallet uses the network chosen in the wallet.") });
+        // 4901, not 4001: wagmi treats 4001 as a refused connection (see ext/dapp-kit.js).
+        return reply({ error: err(4901, "UP Wallet uses the network chosen in the wallet.") });
       }
     }
     if (READS.has(m.method)) return reply({ result: await rpc(chainId, m.method, params) });
