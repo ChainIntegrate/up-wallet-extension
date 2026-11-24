@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 2 (0.2.0, the new version announced from 0.2.1, the signing window's EXT-02 and EXT-03 from 0.2.3): an injected wallet for the sites you connect, the wallet page isolated by the browser; prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 2, 0.2.7 (0.2.0: an injected wallet for the sites you connect, the wallet page isolated by the browser; 0.2.1: a new version announced in the wallet; 0.2.3: the signing window's EXT-02 and EXT-03; 0.2.2 and 0.2.4 to 0.2.7: fixes from live use, connecting from the side panel, Aave, the token lists); prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -209,7 +209,10 @@ Reviewed in the external AI-assisted review of the whole project of 2026-10-29 (
 this repository at `e6f06a7` (0.1.7), read from scratch: **not a professional audit, but an in-depth one.**
 No Critical, High or Medium. The key handling, the signing window, the provider, the isolation and the build
 were found sound ("well engineered"). The review of 2026-11-04, after 0.1.9 (`audits/2026-11-04-review.md`),
-qualifies the isolation: see EXT-01 above and the plan. Two items of 2026-10-29 concern this repository:
+qualified the isolation (EXT-01, Medium) and the signing window (EXT-02, EXT-03, Medium): all three fixed in
+0.2.0 to 0.2.3; the README, the release workflow and the privacy notice (EXT-05 to EXT-07) on 2026-11-24;
+EXT-04 (the network's name and the payer in the signing window) and the license files in the zip go with
+the next release. Summary: Cross_Chain's AUDIT.md, section 19. Two items of 2026-10-29 concern this repository:
 
 - **EXT-1 (Low, accepted): the password is the weaker way.** With a password, the encrypted key and its
   salt are in the browser profile: whoever copies the profile can try passwords offline (PBKDF2-SHA256 with
@@ -242,8 +245,9 @@ qualifies the isolation: see EXT-01 above and the plan. Two items of 2026-10-29 
    confirmation window (Cross_Chain's roadmap, step 5). The discovery test first (`spike/eip6963-discovery/`,
    2026-11-22: listed by every dApp in use but Aerodrome); then, in one release, the wallet page isolated by
    the browser (EXT-01), the provider on the sites the user connects only (permission granted site by site),
-   WalletConnect removed from the extension (the Android app keeps it). Next: the two-provider review, right
-   after the release (Cross_Chain `AUDIT.md`, review policy).
+   WalletConnect removed from the extension (the Android app keeps it). Done in 0.2.0 (2026-11-23), tested
+   live on Aave and Arcstock. Next: the two-provider review of this structural change, run by the
+   maintainer (Cross_Chain `AUDIT.md`, review policy).
 4. **Later: the key signing inside the hardware.** Today the passkey unlocks the key, which is decrypted
    for one signature in the signing window. A passkey signing by itself (P-256, never leaving Windows
    Hello or a security key) needs a contract on the UP that checks such signatures (an ERC-4337 validator,
