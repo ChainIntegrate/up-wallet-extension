@@ -127,8 +127,10 @@ That step is deliberate:
 
 - each device is a controller of its own on the UP: a lost or stolen device is revoked alone, the others keep
   working;
-- a key that never leaves its device cannot be taken from a file, a backup or a sync account, and an
-  encrypted copy cannot be attacked offline;
+- a key that never leaves its device is not in a file to export, a backup or a seed phrase. It is stored
+  encrypted in the browser profile: with a passkey, the secret that decrypts it stays with the passkey; with
+  a password, whoever copies the profile can try passwords offline (EXT-1 below), so a long, unique password
+  matters;
 - the device keys have no admin permissions, so one of them cannot authorize another: adding a controller
   always takes an admin controller, by design.
 
@@ -164,6 +166,13 @@ computer's key": the signing window creates the key with a passkey (or a passwor
 address on the UP from the site's Backup page, on each network. To use a dApp: open it in a tab, press UP
 Wallet's toolbar button there, and in panel 4 press "Connect the active tab's site"; then on the dApp press
 "Connect" and choose "UP Wallet".
+
+## Privacy
+
+No account, no usage statistics, no data sent to ChainIntegrate beyond what the wallet needs to work: what
+the extension keeps in the browser, which services it talks to (RPC nodes, Alchemy, the explorers, IPFS
+gateways, the site's relayer for sponsored gas and the release check) and what they see are in the
+[privacy notice](https://crosschain-lukso.chainintegrate.it/privacy.html), section 7 for the extension.
 
 ## Phase 0: the passkey test
 
@@ -206,8 +215,10 @@ qualifies the isolation: see EXT-01 above and the plan. Two items of 2026-10-29 
   salt are in the browser profile: whoever copies the profile can try passwords offline (PBKDF2-SHA256 with
   600,000 rounds and at least 12 characters raise the cost, but do not stop a weak password). The password
   is only the fallback for a computer whose passkeys give no PRF value. **Use a passkey**: Windows Hello on
-  an up-to-date Windows 11 (the maintainer's setup), or Google Password Manager; its secret never leaves
-  the authenticator. If you must use a password, make it long and unique.
+  an up-to-date Windows 11 (the maintainer's setup), or Google Password Manager. A passkey kept by Windows
+  Hello or a security key stays on that device; a synced passkey (Google Password Manager, iCloud Keychain,
+  1Password) is copied to the account's other devices, so whoever controls that account and gets a copy of
+  this browser profile could unlock the key: protect that account (AUDIT 2026-11-04 EXT-05). If you must use a password, make it long and unique.
 - **EXT-2 (Info, accepted): the id is fixed by a public key in this repository**, so anyone can build a
   package with the same id. Chrome installs only what you load, and the passkey and the stored key belong
   to your installed copy: install only the zip of this repository's releases.

@@ -8,17 +8,21 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default; only the release job may write, and only to the release (AUDIT 2026-11-04 EXT-06).
+# Actions pinned by commit (the v4 tag each one had when pinned, in the comment).
 permissions:
-  contents: write   # used only by the Release step, on tags
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -31,6 +35,19 @@ jobs:
           ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}   # optional: token lists from Alchemy (see scripts/build.js)
         run: npm run build
 
+      # The zip is made and hashed right after the build, before anything else runs on the files.
+      - name: Zip and hash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          C=$(git rev-parse --short HEAD)
+          NAME="up-wallet-extension-$V-$C"
+          if [ "${{ github.event_name }}" = "release" ]; then NAME="up-wallet-extension-${{ github.event.release.tag_name }}"; fi
+          # One folder inside the zip (UP-Wallet-Extension), so extracting it never scatters files.
+          rm -rf pkg && mkdir pkg && cp -r dist pkg/UP-Wallet-Extension
+          (cd pkg && zip -qrX "../$NAME.zip" UP-Wallet-Extension)
+          sha256sum "$NAME.zip" | tee "$NAME.zip.sha256"
+          echo "ZIP=$NAME.zip" >> "$GITHUB_ENV"
+
       - name: Install Chromium for the tests
         timeout-minutes: 10
         run: |
@@ -42,34 +59,46 @@ jobs:
         timeout-minutes: 5
         run: npm test
 
-      - name: Zip
-        run: |
-          V=$(node -p "require('./package.json').version")
-          C=$(git rev-parse --short HEAD)
-          NAME="up-wallet-extension-$V-$C"
-          if [ "${{ github.event_name }}" = "release" ]; then NAME="up-wallet-extension-${{ github.event.release.tag_name }}"; fi
-          # One folder inside the zip (UP-Wallet-Extension), so extracting it never scatters files.
-          rm -rf pkg && mkdir pkg && cp -r dist pkg/UP-Wallet-Extension
-          (cd pkg && zip -qr "../$NAME.zip" UP-Wallet-Extension)
-          echo "ZIP=$NAME.zip" >> "$GITHUB_ENV"
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
           name: up-wallet-extension
-          path: ${{ env.ZIP }}
+          path: |
+            ${{ env.ZIP }}
+            ${{ env.ZIP }}.sha256
+
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write   # to add the zip and the notes to the release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          name: up-wallet-extension
+          path: out
 
       - name: Release
-        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" "$ZIP" --clobber
+          TAG="${{ github.event.release.tag_name }}"
+          ZIP="out/up-wallet-extension-$TAG.zip"
+          (cd out && sha256sum -c "up-wallet-extension-$TAG.zip.sha256")
+          SHA=$(cut -d' ' -f1 "$ZIP.sha256")
+          gh release upload "$TAG" "$ZIP" --clobber
           # The same file under a fixed name: .../releases/latest/download/up-wallet-extension.zip never changes.
           cp "$ZIP" "$RUNNER_TEMP/up-wallet-extension.zip"
-          gh release upload "${{ github.event.release.tag_name }}" "$RUNNER_TEMP/up-wallet-extension.zip" --clobber
-          # The release's description: install and first-use steps, from RELEASE_NOTES.md.
-          sed -e "s/{{TAG}}/${{ github.event.release.tag_name }}/g" \
+          gh release upload "$TAG" "$RUNNER_TEMP/up-wallet-extension.zip" --clobber
+          # The release's description: install and first-use steps, from RELEASE_NOTES.md, with the zip's SHA-256.
+          sed -e "s/{{TAG}}/$TAG/g" \
               -e "s/{{VERSION}}/$(node -p "require('./package.json').version")/g" \
               -e "s/{{PAGE}}/$(node -p "require('./UPSTREAM.json').commit.slice(0, 7)")/g" \
-              -e "s/{{COMMIT}}/$(git rev-parse --short HEAD)/g" RELEASE_NOTES.md > "$RUNNER_TEMP/notes.md"
-          gh release edit "${{ github.event.release.tag_name }}" --notes-file "$RUNNER_TEMP/notes.md"
+              -e "s/{{COMMIT}}/$(git rev-parse --short HEAD)/g" \
+              -e "s/{{SHA256}}/$SHA/g" RELEASE_NOTES.md > "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
