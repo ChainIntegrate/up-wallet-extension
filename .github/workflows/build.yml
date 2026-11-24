@@ -48,6 +48,16 @@ jobs:
           sha256sum "$NAME.zip" | tee "$NAME.zip.sha256"
           echo "ZIP=$NAME.zip" >> "$GITHUB_ENV"
 
+      # Uploaded at once, before the tests install and run their own code (Playwright, not in the lockfile) in
+      # this job: what the release publishes is the zip as built and hashed (review of 2026-11-24, R29). The
+      # release job still runs only if the tests pass (needs: build).
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: up-wallet-extension
+          path: |
+            ${{ env.ZIP }}
+            ${{ env.ZIP }}.sha256
+
       - name: Install Chromium for the tests
         timeout-minutes: 10
         run: |
@@ -56,15 +66,8 @@ jobs:
 
       # The extension in Chromium with a virtual passkey that supports PRF.
       - name: Tests
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: npm test
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
-        with:
-          name: up-wallet-extension
-          path: |
-            ${{ env.ZIP }}
-            ${{ env.ZIP }}.sha256
 
   release:
     if: github.event_name == 'release'

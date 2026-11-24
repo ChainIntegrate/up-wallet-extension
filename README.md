@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 2, 0.2.8 (0.2.0: an injected wallet for the sites you connect, the wallet page isolated by the browser; 0.2.1: a new version announced in the wallet; 0.2.3: the signing window's EXT-02 and EXT-03; 0.2.2 and 0.2.4 to 0.2.7: fixes from live use, connecting from the side panel, Aave, the token lists; 0.2.8: the signing window shows by name and arguments the calls the wallet page knows, checked against the data, and warns only from what they do); prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 2, 0.2.9 (0.2.0: an injected wallet for the sites you connect, the wallet page isolated by the browser; 0.2.1: a new version announced in the wallet; 0.2.3: the signing window's EXT-02 and EXT-03; 0.2.2 and 0.2.4 to 0.2.7: fixes from live use, connecting from the side panel, Aave, the token lists; 0.2.8: the signing window shows by name and arguments the calls the wallet page knows, checked against the data, and warns only from what they do; 0.2.9: the review of 2026-11-24's R1, R2, R3, R5, R8, below); prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
@@ -200,7 +200,11 @@ a request with the wallet closed (the wallet opens and takes it; closed again, t
 disconnecting; a newer version announced (its own release links only, "Later", the same or an older version
 not announced); the buttons of the signing window armed after a moment, the key's balance sent to the UP, at every
 opening the last UP, the key and "Only simulation" back, the compact header, the euro prices, the site
-access withheld, delete, a password key (too short, wrong, right). The CI runs it on every push.
+access withheld, delete, a password key (too short, wrong, right); from 0.2.9 (review of 2026-11-24): six
+requests of a site sent 50 ms apart (the first stays in the request window, the sixth refused, the others
+come one at a time, in order), a site's page closed with its request open (the wallet says so and signing
+for it is refused), a request approved after 40 seconds (the site still gets the signature). `test/sign-plan.js`
+checks the signing window's plan on its own (41 cases). The CI runs both on every push.
 
 ## Security review
 
@@ -211,8 +215,31 @@ No Critical, High or Medium. The key handling, the signing window, the provider,
 were found sound ("well engineered"). The review of 2026-11-04, after 0.1.9 (`audits/2026-11-04-review.md`),
 qualified the isolation (EXT-01, Medium) and the signing window (EXT-02, EXT-03, Medium): all three fixed in
 0.2.0 to 0.2.3; the README, the release workflow and the privacy notice (EXT-05 to EXT-07) on 2026-11-24;
-EXT-04 (the network's name and the payer in the signing window) and the license files in the zip go with
-the next release. Summary: Cross_Chain's AUDIT.md, section 19. Two items of 2026-10-29 concern this repository:
+EXT-04 (the network's name and the payer in the signing window) is fixed in 0.2.9 with R3 below; the license
+files in the zip go with a next release. Summary: Cross_Chain's AUDIT.md, section 19.
+
+The review of 2026-11-24 (two independent AI-assisted reports, summarised privately by the maintainer) found
+no Critical or High here. Fixed in 0.2.9:
+
+- **R1 (Medium): a site's requests one at a time.** The connected sites' requests reach the wallet page one by
+  one, in order, as WalletConnect's client hands them: two requests sent together can no longer replace each
+  other in the request window. At most 5 requests of one site and 20 in all are open at once.
+- **R2 (Medium): a request no longer dies with the service worker.** While a request is open, the site's page
+  and the wallet ping the extension every 20 seconds, so Chrome does not stop it while you read; a site's
+  request that is gone (its page closed, 10 minutes passed, the extension restarted) cannot be signed for.
+- **R3 (Medium): the signing window's context bound to the request.** A signature for a site names that
+  site's request: the site shown is the one Chrome gave for it, never guessed; without one, the window says
+  the wallet itself asks. The network's name and currency come from the chain id, from a fixed table, and the
+  gas line says who pays: the paymaster named in the operation, or the UP when there is none.
+- **R5 (Low): requests do not linger.** Dropped when the site's page goes or the wallet's window cannot open,
+  refused after 10 minutes.
+- **R8 (Info): invisible characters shown.** Bidi controls and zero-width characters in a message or in typed
+  data are written as `[U+XXXX]`, so a site cannot make a text read otherwise than it is.
+- **R9 (Info, 0.2.8):** a call of the key straight to the UP is decoded.
+- **R29 (Low): the release zip is uploaded right after it is built and hashed**, before the tests install
+  and run their own code in the same job.
+
+Two items of 2026-10-29 concern this repository:
 
 - **EXT-1 (Low, accepted): the password is the weaker way.** With a password, the encrypted key and its
   salt are in the browser profile: whoever copies the profile can try passwords offline (PBKDF2-SHA256 with

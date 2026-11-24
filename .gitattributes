@@ -1,0 +1,6 @@
+# Line endings: LF in the repository and in every checkout (review of 2026-11-24, R30), so the build, its
+# script hashes and the zip are the same on every system.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.zip binary

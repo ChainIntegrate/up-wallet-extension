@@ -10,7 +10,10 @@
 //   - "key": the computer key's public address and how it is unlocked (passkey or password), never the key;
 //   - "sign": a structured request for the signing window (ext/signer.html), which computes again from the
 //     request what is signed, shows it, and asks for the passkey or the password: the only place where the key
-//     is opened. One request at a time;
+//     is opened. One request at a time. A signature for a site names its request (`dapp`, the request number):
+//     the site shown is the one Chrome gave for that request, and a request that is gone (answered, its page
+//     closed, expired, the extension restarted) cannot be signed for; without it, the window says the wallet
+//     itself asks (review of 2026-11-24, R3);
 //   - "relay": the site's relay service (gas paid by the site), on its known paths only;
 //   - "rpc": a JSON-RPC call to one of the few network RPCs that answer the site but not a sandboxed page
 //     (origin "null"; checked on 2026-11-23): only those URLs, POST only (RPC_PROXY, set by scripts/build.js);
@@ -94,7 +97,9 @@
   }
 
   // ---- the connected sites' requests (phase 2), from the service worker
-  const SIGNING = new Set(["personal_sign", "eth_sign", "eth_signTypedData", "eth_signTypedData_v3", "eth_signTypedData_v4", "eth_sendTransaction"]);
+  // What a site's request can have signed: its method → the signing window's kinds.
+  const KINDS_OF = { personal_sign: ["message"], eth_sign: ["message"], eth_signTypedData: ["typed"], eth_signTypedData_v3: ["typed"],
+    eth_signTypedData_v4: ["typed"], eth_sendTransaction: ["tx", "userop"] };
   const dappOpen = new Map();   // n → { origin, method }: passed to the page, not answered yet
   const bgCalls = new Map();
   let bg = null, ready = false, bgN = 0;
@@ -106,6 +111,10 @@
       if (m.type === "request" && typeof m.n === "number") {
         dappOpen.set(m.n, { origin: m.origin, method: m.method });
         push("dapp-request", { n: m.n, origin: m.origin, method: m.method, params: m.params });
+      } else if (m.type === "cancel" && typeof m.n === "number") {
+        // The site's page closed or the request expired (ext/background.js): nothing can be signed for it.
+        dappOpen.delete(m.n);
+        push("dapp-cancel", { n: m.n });
       } else if (m.type === "reply") {
         const w = bgCalls.get(m.c);
         if (!w) return;
@@ -123,6 +132,9 @@
     bg = p;
   }
   connectBg();
+  // While a site's request or a signature is open, a ping to the service worker every 20 s, so that Chrome does
+  // not stop it (and the request with it) while the user reads (review of 2026-11-24, R2).
+  setInterval(() => { if ((dappOpen.size || busy) && bg) { try { bg.postMessage({ type: "ping" }); } catch (e) { /* reconnecting */ } } }, 20000);
   const bgCall = (type, args) => new Promise((ok, no) => {
     const c = ++bgN;
     bgCalls.set(c, { ok, no });
@@ -174,10 +186,17 @@
         const json = JSON.stringify(a);
         if (json.length > MAX_REQUEST) throw fail(-32602, "request too large");
         const req = JSON.parse(json);
-        // The site shown in the signing window: the connected site whose request is open, as Chrome named it;
-        // none when it is the wallet's own (a send, the key's balance). Never what the page says.
-        const open = [...dappOpen.values()].filter((x) => SIGNING.has(x.method));
-        req.site = open.length === 1 ? open[0].origin : null;
+        // The site shown in the signing window: the one Chrome gave for the site's request this signature is
+        // for, which must still be open and of a method that signs this kind; none when the wallet itself asks
+        // (a send, the key's balance). Never what the page says.
+        req.site = null;
+        if (req.dapp !== undefined && req.dapp !== null) {
+          const d = dappOpen.get(req.dapp);
+          if (!d) throw fail(4001, it() ? "La richiesta del sito non è più aperta (chiusa, scaduta o già risposta): niente da firmare." : "The site's request is no longer open (closed, expired or answered): nothing to sign.");
+          if (!(KINDS_OF[d.method] || []).includes(req.kind)) throw fail(-32602, "the signature does not match the site's request");
+          req.site = d.origin;
+        }
+        delete req.dapp;
         return ask(req);
       }
       case "relay": {

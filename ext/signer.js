@@ -170,7 +170,9 @@ async function main() {
   let p;
   try { p = plan(req, k.address, lang); } catch (e) { answer({ error: e && e.code ? e : { code: -32602, message: e.message } }); return; }
   $("title").textContent = p.title;
+  // The site, as the browser (or WalletConnect) gave it for this request; none: the wallet itself asks (R3).
   if (p.site) $("site").textContent = L(`Richiesta da: ${p.site}`, `Requested by: ${p.site}`);
+  else if (p.own) $("site").textContent = L("Richiesta dal wallet stesso, non da un sito.", "Requested by the wallet itself, not by a site.");
   // The warnings first, where they cannot be missed (EXT-02, EXT-03).
   // Red first: what can hand over the UP (a DELEGATECALL, its owner, its controllers) or a description that
   // does not match the data; then the warnings.

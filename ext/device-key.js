@@ -105,9 +105,16 @@ const sameAddr = (a) => typeof a === "string" && ethers.isAddress(a) && address 
 
 // One request to the signing window, through the host: it answers with the result, or rejects (closing the
 // window rejects with 4001).
+// A signature for a site's request names it (its number, from ext/dapp-kit.js): the host takes the site from that
+// request and refuses if it is no longer open (review of 2026-11-24, R2, R3). Only a request whose method signs
+// this kind: a send the wallet starts meanwhile stays the wallet's own.
+const KINDS_OF = { personal_sign: ["message"], eth_sign: ["message"], eth_signTypedData: ["typed"], eth_signTypedData_v3: ["typed"],
+  eth_signTypedData_v4: ["typed"], eth_sendTransaction: ["tx", "userop"] };
 async function ask(req) {
   if (!bridge) throw rpcError(-32603, "the wallet is not open in the extension");
-  return bridge.call("sign", { ...req, site: req.site || null, lang: en() ? "en" : "it" });
+  const cur = typeof window.__upwDappCurrent === "function" ? window.__upwDappCurrent() : null;
+  const dapp = cur && (KINDS_OF[cur.method] || []).includes(req.kind) ? cur.n : null;
+  return bridge.call("sign", { ...req, site: null, dapp, lang: en() ? "en" : "it" });
 }
 // The dApp asking, for the signing window's header: the WalletConnect session the page's request window is for.
 const site = () => (typeof window.__upwalletRequestSite === "string" ? window.__upwalletRequestSite.slice(0, 200) : null);

@@ -122,6 +122,22 @@ p = plan(opOf(exec(UP, up.encodeFunctionData("execute", [0, USDC, 0, erc20.encod
 ck("LSP20: execute of the UP called on the UP is decoded", text(p).includes(`Allows ${SPENDER} to spend UNLIMITED`), text(p));
 p = plan(opOf(exec(UP, lsp0.encodeFunctionData("setData", [ethers.id("SomeKey"), "0x01"]))), key.address, "en");
 ck("LSP20: setData of another key: shown, not red", p.danger.length === 0 && /Writes 1 data key/.test(text(p)), text(p));
+// ---- review of 2026-11-24: R3 (network from the chain id, payer from the operation, own requests) and R8
+const PMX = ethers.getAddress("0xbea7ea6562cea4da9050bcd81e21ca569440d21e");
+const withPm = (callData) => ({ ...opOf(callData), op: { ...op, callData, paymasterAndData: PMX.toLowerCase() + "00".repeat(77) } });
+p = plan({ ...withPm(exec(USDC, erc20.encodeFunctionData("transfer", [TO, 1n]))), net: { name: "Totally Safe Net", currency: "FAKE" }, site: "https://dapp.example" }, key.address, "en");
+ck("R3: the network's name and currency come from the chain id, not from the caller", /Operation of the UP on Base/.test(p.title) && text(p).includes("Network: Base (8453)") && !/Totally Safe|FAKE/.test(text(p)) && p.own === false, text(p));
+ck("R3: an operation with a paymaster: paid by that paymaster, not by the UP", text(p).includes(`Gas: paid by the paymaster ${PMX} (sponsored gas)`), text(p));
+p = plan({ ...opOf(exec(USDC, erc20.encodeFunctionData("transfer", [TO, 1n]))), op: { ...op, callData: exec(USDC, erc20.encodeFunctionData("transfer", [TO, 1n])), paymasterAndData: "0x" } }, key.address, "en");
+ck("R3: an operation with no paymaster: paid by the UP, with the most it can cost", /Gas: paid by the UP, up to [0-9.]+ ETH: no paymaster/.test(text(p)) && p.own === true, text(p));
+p = plan({ ...opOf("0x"), chainId: 999999, net: { name: "My Net", currency: "MYC" } }, key.address, "en");
+ck("R3: a network not in the window's list: named by its chain id, the wallet's name marked as such", /chain 999999 \(name given by the wallet: My Net\)/.test(p.title), p.title);
+p = plan({ kind: "tx", net: { name: "Fake", currency: "XXX" }, tx: { to: TO, value: "10000000000000000", data: "0x", nonce: 1, gasLimit: "21000", chainId: 42, type: 2, maxFeePerGas: "2", maxPriorityFeePerGas: "1" } }, key.address, "en");
+ck("R3: a transaction: the network from its chain id, the gas paid by this key", /Transaction on LUKSO/.test(p.title) && text(p).includes("Sends 0.01 LYX") && /Maximum gas: .* LYX, paid by this key/.test(text(p)), text(p));
+p = plan({ kind: "message", message: "Pay \u202Etxt.exe\u200B now", account: key.address, site: "https://dapp.example" }, key.address, "en");
+ck("R8: bidi and zero-width characters in a message shown as [U+XXXX]", text(p).includes("Pay [U+202E]txt.exe[U+200B] now") && !/[\u202e\u200b]/.test(text(p)), text(p));
+p = plan({ kind: "typed", account: key.address, data: JSON.stringify({ ...mail, message: { contents: "a\u2066b\uFEFFc" } }), chainId: 8453 }, key.address, "en");
+ck("R8: and in typed data", text(p).includes("a[U+2066]b[U+FEFF]c"), text(p));
 // unchanged refusals
 ck("a 32-byte message: still refused", refused(() => plan({ kind: "message", message: ethers.hexlify(ethers.randomBytes(32)), account: key.address }, key.address)).code === 4100);
 

@@ -266,7 +266,7 @@ let named = null;   // the address whose name the mocked UP keeps
     return { sig: prep.op.signature, logs, err };
   }, [ser, H]);
   txt = await shown();
-  ck("gas relay: the window shows the UP's operation (recipient, value, function, gas paid by the site)", /Operazione della UP su Base/.test(txt) && txt.includes(ethers.getAddress(TO)) && /0\.01 ETH/.test(txt) && /0x12345678/.test(txt) && /pagato dal sito/.test(txt), txt);
+  ck("gas relay: the window shows the UP's operation (recipient, value, function, gas paid by the paymaster named in the operation, R3)", /Operazione della UP su Base/.test(txt) && txt.includes(ethers.getAddress(TO)) && /0\.01 ETH/.test(txt) && /0x12345678/.test(txt) && /pagato dal paymaster 0x[0-9a-fA-F]{40} \(gas sponsorizzato\)/.test(txt), txt);
   await click("#sign");
   const relay = await pr;
   ck("gas relay: the operation hash computed in the signing window, personal_sign by the computer key", ethers.isHexString(relay.sig, 65) && ethers.verifyMessage(ethers.getBytes(H), relay.sig) === addr, JSON.stringify(relay));
@@ -438,7 +438,7 @@ let named = null;   // the address whose name the mocked UP keeps
   mark();
   pr = f.evaluate(async () => { try { return await signerProvider.request({ method: "personal_sign", params: [ethers.hexlify(ethers.toUtf8Bytes("solo mio")), signerAddress] }); } catch (e) { return { code: e.code }; } });
   txt = await shown();
-  ck("the signing window names no site the wallet page claims (the host decides it)", !/uniswap/i.test(txt) && !/Richiesta da/.test(txt), txt);
+  ck("the signing window names no site the wallet page claims (the host decides it); the wallet's own request is said so (R3)", !/uniswap/i.test(txt) && !/Richiesta da:/.test(txt) && /Richiesta dal wallet stesso/.test(txt), txt);
   await click("#cancel"); await pr;
   await f.evaluate(() => { delete window.__upwalletRequestSite; });
   // Chrome's permission for the site: in the test's copy of the manifest (see DIST), as after the user's yes.
@@ -510,6 +510,57 @@ let named = null;   // the address whose name the mocked UP keeps
   await click("#sign");
   const ds = await dsig;
   ck("the site gets the signature of the computer key, checked by the UP (ERC-1271) before it goes", typeof ds.r === "string" && ethers.verifyMessage("hello dApp", ds.r) === addr, JSON.stringify(ds));
+  // ---- review of 2026-11-24: one site request at a time (R1), a cap per site and dropped when the page goes
+  // (R5), the site bound to its request (R3), a request still answered after 40 s (R2)
+  const msgHex = (t) => "0x" + Array.from(new TextEncoder().encode(t), (b) => b.toString(16).padStart(2, "0")).join("");
+  const fire = (pg, t) => pg.evaluate(([m, UP]) => { window.__res = window.__res || {}; window.__upw.request({ method: "personal_sign", params: [m, UP] }).then((r) => { window.__res[m] = { r }; }, (e) => { window.__res[m] = { code: e.code, m: e.message }; }); }, [msgHex(t), UP]);
+  const resOf = (pg, t) => pg.evaluate((m) => (window.__res || {})[m] || null, msgHex(t));
+  const modalUp = async (want) => {
+    await f.waitForFunction((w) => !document.getElementById("requestModal").hidden && !document.getElementById("rejectBtn").disabled && document.getElementById("requestModal").innerText.includes(w), want, { timeout: 15000 }).catch(() => null);
+    return f.evaluate(() => (document.getElementById("requestModal").hidden ? "" : document.getElementById("requestModal").innerText));
+  };
+  const until = async (fn, ms = 10000) => { const t0 = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t0 > ms) return v; await new Promise((r) => setTimeout(r, 100)); } };
+  for (const t of ["primo", "secondo", "terzo", "quarto", "quinto", "sesto"]) { await fire(dapp, t); await new Promise((r) => setTimeout(r, 50)); }
+  const sixth = await until(() => resOf(dapp, "sesto"));
+  let m1 = await modalUp("primo");
+  await new Promise((r) => setTimeout(r, 1500));
+  const m1later = await f.evaluate(() => document.getElementById("requestModal").innerText);
+  ck("R1: six requests of a site sent 50 ms apart: the first stays in the request window (not replaced by the next)", /primo/.test(m1) && /primo/.test(m1later) && !/secondo/.test(m1later), m1later.slice(0, 200));
+  ck("R5: at most 5 requests of one site open: the sixth refused at once (-32002)", sixth && sixth.code === -32002, JSON.stringify(sixth));
+  const order = [];
+  for (const t of ["primo", "secondo", "terzo", "quarto", "quinto"]) {
+    const m = await modalUp(t);
+    order.push(/./.test(m) && m.includes(t) ? t : "?");
+    await f.$eval("#rejectBtn", (b) => b.click());
+    await until(() => resOf(dapp, t));
+  }
+  const rejected = await Promise.all(["primo", "secondo", "terzo", "quarto", "quinto"].map((t) => resOf(dapp, t)));
+  ck("R1: the next request comes once the current one is answered, in order", order.join(",") === "primo,secondo,terzo,quarto,quinto" && rejected.every((x) => x && x.code === 4001), order.join(",") + JSON.stringify(rejected));
+  // R5, R3: the site's page closes while its request is open: dropped; signing for it is refused by the host.
+  const dapp3 = await ctx.newPage();
+  await dapp3.goto(DAPP + "/");
+  await dapp3.evaluate(() => new Promise((ok) => { window.addEventListener("eip6963:announceProvider", (e) => { window.__upw = e.detail.provider; ok(true); }); window.dispatchEvent(new Event("eip6963:requestProvider")); }));
+  await fire(dapp3, "pagina chiusa");
+  await modalUp("pagina chiusa");
+  await dapp3.close();
+  const cancelled = await until(() => f.evaluate(() => /non è più aperta/.test(document.getElementById("log").textContent)));
+  const before = signer.url();
+  await f.$eval("#signBtn", (b) => b.click()).catch(() => null);
+  await new Promise((r) => setTimeout(r, 2000));
+  const logAfter = await f.evaluate(() => document.getElementById("log").textContent);
+  ck("R5/R3: the site's page closed with its request open: the wallet says so, and signing for it is refused (no signing window)", cancelled && signer.url() === before && /non è più aperta/.test(logAfter), logAfter.slice(-400));
+  await f.evaluate(() => { const b = document.getElementById("rejectBtn"); if (!document.getElementById("requestModal").hidden) b.click(); });
+  // R2: a request read for 40 s, then signed: the site still gets the signature.
+  await fire(dapp, "dopo 40 secondi");
+  await modalUp("dopo 40 secondi");
+  await new Promise((r) => setTimeout(r, 40000));
+  mark();
+  await f.$eval("#signBtn", (b) => b.click());
+  txt = await shown();
+  await click("#sign");
+  const late = await until(() => resOf(dapp, "dopo 40 secondi"), 20000);
+  ck("R2: a site's request approved after 40 s: the signing window names the site, and the site gets the signature", /Richiesta da: https:\/\/dapp\.test/.test(txt) && late && typeof late.r === "string" && ethers.verifyMessage("dopo 40 secondi", late.r) === addr, JSON.stringify(late) + " / " + txt.slice(0, 200));
+
   // disconnecting the site: no account, no permission, nothing reaches the wallet
   await dapp.evaluate(() => { window.__ev = []; });
   await f.evaluate(() => [...document.querySelectorAll(".upw-dapps button")].find((b) => /Scollega/.test(b.textContent)).click());

@@ -9,6 +9,10 @@
   const MAX = 512 * 1024;
   let port = null;
   const open = new Set();   // the calls sent and not answered yet
+  // While a call is open, a ping every 20 s: Chrome stops an idle service worker after about 30 s, and an open
+  // port alone does not keep it alive; with it went the request, while the wallet could still sign and send
+  // (review of 2026-11-24, R2). The worker ignores the ping.
+  setInterval(() => { if (open.size && port) { try { port.postMessage({ ping: 1 }); } catch (e) { /* reconnects at the next call */ } } }, 20000);
   const toPage = (m) => window.postMessage({ target: "upw-inpage", ...m }, window.location.origin);
   function connect() {
     if (port) return port;

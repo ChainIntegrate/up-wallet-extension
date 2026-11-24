@@ -20,20 +20,58 @@
 // than the UP). A signature that does not match the data is a red alert, as a DELEGATECALL of the UP, a change
 // of the UP's owner or of its controllers' permissions. A call neither side can decode stays a warning.
 // plan() also returns `danger`: the red alerts, shown before the warnings.
+// From 0.2.9 / 0.10.4 (review of 2026-11-24): the network's name and currency come from the chain id, from the
+// table below, not from the caller (R3); who pays an operation's gas is read from its paymasterAndData (R3);
+// `own` says the wallet itself started the request (no site); bidi and zero-width characters in what is shown
+// are written as [U+XXXX] (R8).
 import { ethers } from "ethers";
 
 const ENTRY_POINT = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
 const PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3";
 const rpcError = (code, message) => ({ code, message });
+// The networks of UP Wallet (Cross_Chain chains.js, 2026-11-24): chain id → [name, currency]. A network not
+// listed (a custom RPC) is shown by its chain id, with the name the wallet gave marked as such.
+const NETS = {
+  42: ["LUKSO", "LYX"], 4201: ["LUKSO Testnet", "LYXt"], 16661: ["0G", "0G"], 33139: ["ApeChain", "APE"],
+  42161: ["Arbitrum One", "ETH"], 5042: ["Arc", "USDC"], 43114: ["Avalanche C-Chain", "AVAX"], 8453: ["Base", "ETH"],
+  80094: ["Berachain", "BERA"], 81457: ["Blast", "ETH"], 56: ["BNB Smart Chain", "BNB"], 42220: ["Celo", "CELO"],
+  88888: ["Chiliz", "CHZ"], 1030: ["Conflux EVM eSpace", "CFX"], 1116: ["Core Blockchain", "CORE"],
+  2632500: ["COTI", "COTI"], 25: ["Cronos", "CRO"], 666666666: ["Degen Chain", "DEGEN"], 1: ["Ethereum", "ETH"],
+  61: ["Ethereum Classic", "ETC"], 42793: ["Etherlink", "XTZ"], 14: ["Flare", "FLR"], 100: ["Gnosis", "XDAI"],
+  1625: ["Gravity Alpha", "G"], 177: ["HashKey Chain", "HSK"], 13371: ["Immutable zkEVM", "IMX"],
+  57073: ["Ink", "ETH"], 747474: ["Katana", "ETH"], 2222: ["Kava EVM", "KAVA"], 232: ["Lens", "GHO"],
+  59144: ["Linea", "ETH"], 5000: ["Mantle", "MNT"], 4326: ["MegaETH", "ETH"], 34443: ["Mode", "ETH"],
+  143: ["Monad", "MON"], 1284: ["Moonbeam", "GLMR"], 1285: ["Moonriver", "MOVR"], 10: ["Optimism", "ETH"],
+  9745: ["Plasma", "XPL"], 98866: ["Plume", "PLUME"], 137: ["Polygon", "POL"], 369: ["Pulsechain", "PLS"],
+  2020: ["Ronin", "RON"], 534352: ["Scroll", "ETH"], 5031: ["Somnia", "SOMI"], 1868: ["Soneium", "ETH"],
+  146: ["Sonic", "S"], 988: ["Stable", "USDT0"], 1514: ["Story", "DATA"], 105105: ["Stratis Xertra", "STRAX"],
+  167000: ["Taiko Alethia", "ETH"], 40: ["Telos EVM", "TLOS"], 4217: ["Tempo", "USD"], 130: ["Unichain", "ETH"],
+  480: ["World Chain", "ETH"], 196: ["X Layer", "OKB"], 660279: ["Xai", "XAI"], 50: ["XDC Network", "XDC"],
+  7000: ["ZetaChain", "ZETA"], 324: ["zkSync", "ETH"], 7777777: ["Zora", "ETH"],
+  421614: ["Arbitrum Sepolia (testnet)", "ETH"], 84532: ["Base Sepolia (testnet)", "ETH"],
+  560048: ["Ethereum Hoodi (testnet)", "ETH"], 11155111: ["Ethereum Sepolia (testnet)", "ETH"],
+  80002: ["Polygon Amoy (testnet)", "POL"], 300: ["zkSync Sepolia (testnet)", "ETH"], 1329: ["Sei", "SEI"]
+};
+function netOf(chainId, given) {
+  const id = Number(chainId);
+  const k = NETS[id];
+  if (k) return { name: k[0], currency: k[1], id };
+  const g = given || {};
+  return { name: L(`rete ${id} (nome dato dal wallet: ${oneLine(g.name || "?", 30)})`, `chain ${id} (name given by the wallet: ${oneLine(g.name || "?", 30)})`), currency: oneLine(g.currency || "", 10), id };
+}
 let lang = "en";
 const L = (it, eng) => (lang === "it" ? it : eng);
 // Per request (set by plan()): the page's hints, the UP, the red alerts.
 let HINTS = {}, UPADDR = null, DANGER = [];
 
 function messageBytes(m) { return typeof m === "string" && ethers.isHexString(m) ? ethers.getBytes(m) : ethers.toUtf8Bytes(String(m)); }
-const oneLine = (t, n) => { const c = String(t).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").trim(); return c.length > n ? c.slice(0, n - 1) + "…" : c; };
+// Characters that change how text reads without being seen (bidi controls, zero-width, the BOM): written as
+// [U+XXXX], so a site cannot make a message or a field read otherwise than it is (R8).
+const FORMAT = /[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+const visible = (t) => String(t).replace(FORMAT, (c) => `[U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}]`);
+const oneLine = (t, n) => { const c = visible(String(t).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")).trim(); return c.length > n ? c.slice(0, n - 1) + "…" : c; };
 function textOf(bytes) {
-  try { const t = ethers.toUtf8String(bytes); if (!/[\u0000-\u0008\u000e-\u001f]/.test(t)) return t; } catch (e) { /* not UTF-8 */ }
+  try { const t = ethers.toUtf8String(bytes); if (!/[\u0000-\u0008\u000e-\u001f]/.test(t)) return visible(t); } catch (e) { /* not UTF-8 */ }
   return null;
 }
 const UP_IFACE = new ethers.Interface(["function execute(uint256,address,uint256,bytes)", "function executeBatch(uint256[],address[],uint256[],bytes[])"]);
@@ -266,10 +304,10 @@ function typedPlan(req) {
   // A permit or a signed transfer is meant for the UP: one for another address (the key's own, another UP) is flagged.
   const forWho = /permit/i.test(pt) ? message.owner : /WithAuthorization$/.test(pt) ? message.from : undefined;
   if (req.up && ethers.isAddress(req.up) && typeof forWho === "string" && ethers.isAddress(forWho) && ethers.getAddress(forWho) !== ethers.getAddress(req.up)) warnings.push(L(`Questa firma non è per la UP ma per ${ethers.getAddress(forWho)}.`, `This signature is not for the UP but for ${ethers.getAddress(forWho)}.`));
-  return { title: L(`Firma di dati strutturati (${oneLine(pt, 40)})`, `Sign typed data (${oneLine(pt, 40)})`), site: req.site, warnings,
+  return { title: L(`Firma di dati strutturati (${oneLine(pt, 40)})`, `Sign typed data (${oneLine(pt, 40)})`), site: req.site, own: !req.site, warnings,
     rows: [[L("Dominio", "Domain"), [oneLine(dom.name || "?", 60), dom.chainId != null ? L(`rete ${chainText(dom.chainId)}`, `chain ${chainText(dom.chainId)}`) : L("nessuna rete", "no chain"), dom.verifyingContract ? oneLine(dom.verifyingContract, 42) : ""].filter(Boolean).join(" · ")],
       [L("Tipo firmato", "Type signed"), pt],
-      [L("Contenuto", "Content"), JSON.stringify(message, null, 2)]],
+      [L("Contenuto", "Content"), visible(JSON.stringify(message, null, 2))]],
     digest: ethers.TypedDataEncoder.hash(dom, types, j.message), finish: (sig) => sig.serialized };
 }
 
@@ -293,7 +331,7 @@ export function plan(req, address, language = "en") {
     // has the 4337 permission (AUDIT 2026-10-02 H-2, 2026-10-26 PK-2). Operations come as "userop" instead.
     if (bytes.length === 32) throw rpcError(4100, L("La chiave non firma un messaggio opaco di 32 byte: potrebbe autorizzare un'operazione della UP su un'altra rete.", "The key does not sign an opaque 32-byte message: it could authorize an operation of the UP on another network."));
     const text = textOf(bytes);
-    return { title: L("Firma di un messaggio", "Sign a message"), site: req.site, warnings: [],
+    return { title: L("Firma di un messaggio", "Sign a message"), site: req.site, own: !req.site, warnings: [],
       rows: [[L("Messaggio", "Message"), text !== null ? text : L(`${bytes.length} byte, non testo: ${ethers.hexlify(bytes)}`, `${bytes.length} bytes, not text: ${ethers.hexlify(bytes)}`)]],
       digest: ethers.hashMessage(bytes), finish: (sig) => sig.serialized };
   }
@@ -303,22 +341,23 @@ export function plan(req, address, language = "en") {
   }
   if (req.kind === "tx") {
     const t = ethers.Transaction.from({ ...req.tx, chainId: BigInt(req.tx.chainId) });
+    const net = netOf(t.chainId, req.net);
     const warnings = [];
     let what = null;
     if (t.to && selector(t.data) === KM_EXECUTE) {
       try {
         const [payload] = KM_IFACE.decodeFunctionData("execute", t.data);
-        what = [["Key Manager", t.to], [L("Valore", "Value"), amount(t.value, req.net.currency)],
-          [L("Funzione", "Function"), L("execute(bytes): la UP esegue", "execute(bytes): the UP runs")], ...upCalls(payload, req.net.currency, warnings)];
+        what = [["Key Manager", t.to], [L("Valore", "Value"), amount(t.value, net.currency)],
+          [L("Funzione", "Function"), L("execute(bytes): la UP esegue", "execute(bytes): the UP runs")], ...upCalls(payload, net.currency, warnings)];
       } catch (e) { what = null; }
     }
     if (!what) {
-      if (t.to) what = [[L("Verso", "To"), t.to], [L("Valore", "Value"), amount(t.value, req.net.currency)], ...describeCall(t.to, t.value, t.data, req.net.currency, warnings)];
-      else { what = [[L("Verso", "To"), L("(nuovo contratto)", "(new contract)")], [L("Valore", "Value"), amount(t.value, req.net.currency)]]; warnings.push(L("Crea un nuovo contratto.", "Deploys a new contract.")); }
+      if (t.to) what = [[L("Verso", "To"), t.to], [L("Valore", "Value"), amount(t.value, net.currency)], ...describeCall(t.to, t.value, t.data, net.currency, warnings)];
+      else { what = [[L("Verso", "To"), L("(nuovo contratto)", "(new contract)")], [L("Valore", "Value"), amount(t.value, net.currency)]]; warnings.push(L("Crea un nuovo contratto.", "Deploys a new contract.")); }
     }
-    return { title: L(`Transazione su ${req.net.name}`, `Transaction on ${req.net.name}`), site: req.site, warnings, danger: DANGER,
+    return { title: L(`Transazione su ${net.name}`, `Transaction on ${net.name}`), site: req.site, own: !req.site, warnings, danger: DANGER,
       rows: [...what,
-        [L("Gas massimo", "Maximum gas"), amount(t.gasLimit * (t.maxFeePerGas ?? t.gasPrice ?? 0n), req.net.currency)], [L("Rete", "Network"), `${req.net.name} (${t.chainId})`]],
+        [L("Gas massimo", "Maximum gas"), L(`${amount(t.gasLimit * (t.maxFeePerGas ?? t.gasPrice ?? 0n), net.currency)}, pagato da questa chiave`, `${amount(t.gasLimit * (t.maxFeePerGas ?? t.gasPrice ?? 0n), net.currency)}, paid by this key`)], [L("Rete", "Network"), `${net.name} (${t.chainId})`]],
       digest: t.unsignedHash, finish: (sig) => { t.signature = sig; if (t.from !== k.address) throw new Error("signature check failed"); return t.serialized; } };
   }
   if (req.kind === "userop") {
@@ -329,12 +368,19 @@ export function plan(req, address, language = "en") {
       maxPriorityFeePerGas: BigInt(raw.maxPriorityFeePerGas), paymasterAndData: raw.paymasterAndData };
     for (const x of ["initCode", "callData", "paymasterAndData"]) if (!ethers.isHexString(op[x])) throw rpcError(-32602, "malformed bytes");
     if (!req.up || op.sender !== ethers.getAddress(req.up)) throw rpcError(4100, L("L'operazione non è della UP scelta nella pagina.", "The operation is not of the UP chosen in the page."));
+    const net = netOf(req.chainId, req.net);
     const warnings = [];
-    const what = upCalls(op.callData, req.net.currency, warnings);
+    const what = upCalls(op.callData, net.currency, warnings);
     const h = userOpHash(op, Number(req.chainId));
+    // Who pays: the paymaster named in the operation (its first 20 bytes), else the UP itself, from its balance.
+    const pm = ethers.dataLength(op.paymasterAndData) >= 20 ? ethers.getAddress(ethers.dataSlice(op.paymasterAndData, 0, 20)) : null;
+    const maxGas = (op.callGasLimit + op.verificationGasLimit + op.preVerificationGas) * op.maxFeePerGas;
+    const payer = pm
+      ? L(`pagato dal paymaster ${pm} (gas sponsorizzato), non dalla UP`, `paid by the paymaster ${pm} (sponsored gas), not by the UP`)
+      : L(`pagato dalla UP, fino a ${amount(maxGas, net.currency)}: nessun paymaster`, `paid by the UP, up to ${amount(maxGas, net.currency)}: no paymaster`);
     // Extension4337 checks a personal_sign of the operation hash.
-    return { title: L(`Operazione della UP su ${req.net.name}`, `Operation of the UP on ${req.net.name}`), site: req.site, warnings, danger: DANGER,
-      rows: [["UP", op.sender], ...what, ["Gas", L("pagato dal sito (relayer)", "paid by the site (relayer)")], [L("Rete", "Network"), `${req.net.name} (${req.chainId})`]],
+    return { title: L(`Operazione della UP su ${net.name}`, `Operation of the UP on ${net.name}`), site: req.site, own: !req.site, warnings, danger: DANGER,
+      rows: [["UP", op.sender], ...what, ["Gas", payer], [L("Rete", "Network"), `${net.name} (${req.chainId})`]],
       digest: ethers.hashMessage(ethers.getBytes(h)), finish: (sig) => sig.serialized };
   }
   throw rpcError(4200, "unknown request");

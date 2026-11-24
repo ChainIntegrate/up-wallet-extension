@@ -22,6 +22,10 @@ const READS = new Set(["eth_blockNumber", "eth_call", "eth_estimateGas", "eth_fe
   "eth_getBlockByHash", "eth_getBlockByNumber", "eth_getCode", "eth_getLogs", "eth_getStorageAt", "eth_getTransactionByHash",
   "eth_getTransactionCount", "eth_getTransactionReceipt", "eth_maxPriorityFeePerGas", "eth_getProof"]);
 const MAX_QUEUE = 20;
+// Review of 2026-11-24 (R1, R5): at most 5 requests of one site and 20 in all open at once (waiting for the
+// wallet or in it), with the wallet open too; a request not answered in 10 minutes is refused; a request is
+// dropped when its site's page goes (its port closes) or the wallet cannot open.
+const PER_SITE = 5, MAX_OPEN = 20, EXPIRY_MS = 10 * 60 * 1000;
 const err = (code, message) => ({ code, message });
 
 // The toolbar button opens the side panel here, not by Chrome's panel behaviour: the click also gives this
@@ -137,7 +141,7 @@ async function onDapp(port, m) {
     if (READS.has(m.method)) return reply({ result: await rpc(chainId, m.method, params) });
     if (!TO_WALLET.has(m.method)) return reply({ error: err(4200, `${m.method} is not supported by UP Wallet`) });
     if (NEEDS_SESSION.has(m.method) && !s) return reply({ error: err(4100, "Connect UP Wallet first (eth_requestAccounts).") });
-    toWallet({ origin, method: m.method, params }, reply);
+    toWallet({ origin, method: m.method, params }, reply, port);
   } catch (e) { reply({ error: e && typeof e.code === "number" ? e : err(-32603, String((e && e.message) || e)) }); }
 }
 
@@ -145,11 +149,16 @@ async function onDapp(port, m) {
 const hosts = [];                 // ports of the open wallets whose page is ready; the last one gets the requests
 const starting = new Set();       // wallets open whose page is not ready yet
 const queue = [];                 // waiting for a wallet: { n, origin, method, params, reply }
-const inflight = new Map();       // n → { reply, host }
+const inflight = new Map();       // n → { reply, host, origin, port, at }
 let nextN = 0, opening = 0, openedWin = null;
 const currentHost = () => hosts[hosts.length - 1] || null;
-function toWallet(r, reply) {
-  const item = { n: ++nextN, ...r, reply };
+function toWallet(r, reply, port = null) {
+  const item = { n: ++nextN, ...r, reply, port, at: Date.now() };
+  if (reply) {
+    const open = [...inflight.values(), ...queue];
+    if (open.filter((x) => x.origin === r.origin).length >= PER_SITE) { reply({ error: err(-32002, "Too many requests of this site are open in UP Wallet: answer them first.") }); return; }
+    if (open.length >= MAX_OPEN) { reply({ error: err(-32002, "Too many requests are open in UP Wallet.") }); return; }
+  }
   const h = currentHost();
   if (h) return send(h, item);
   if (!reply) return;   // a notice for the wallet page: nobody to tell
@@ -157,8 +166,22 @@ function toWallet(r, reply) {
   queue.push(item);
   if (!starting.size) openWallet();
 }
+// A request the site can no longer get an answer for (its page closed, too old): refused to the site if it is
+// still there, dropped from the wallet page, whose signing then stops (ext/host.js refuses "sign" for it).
+function cancel(n, why) {
+  const f = inflight.get(n);
+  if (!f) return;
+  inflight.delete(n);
+  f.reply({ error: err(4001, why) });
+  try { f.host.postMessage({ type: "cancel", n }); } catch (e) { /* the wallet closed */ }
+}
+setInterval(() => {
+  const old = Date.now() - EXPIRY_MS;
+  for (const [n, f] of inflight) if (f.at < old) cancel(n, "The request expired in UP Wallet (10 minutes).");
+  for (let i = queue.length - 1; i >= 0; i--) if (queue[i].at < old) { const it = queue.splice(i, 1)[0]; if (it.reply) it.reply({ error: err(4001, "The request expired waiting for UP Wallet.") }); }
+}, 30000);
 function send(h, item) {
-  if (item.reply) inflight.set(item.n, { reply: item.reply, host: h });
+  if (item.reply) inflight.set(item.n, { reply: item.reply, host: h, origin: item.origin, port: item.port, at: item.at });
   try { h.postMessage({ type: "request", n: item.n, origin: item.origin, method: item.method, params: item.params }); }
   catch (e) { inflight.delete(item.n); if (item.reply) item.reply({ error: err(4001, "The wallet closed.") }); }
 }
@@ -171,6 +194,8 @@ async function openWallet() {
   const pos = cur && cur.left != null ? { left: Math.max(0, cur.left + Math.max(0, cur.width - W - 12)), top: Math.max(0, cur.top + 72) } : {};
   const w = await api.windows.create({ url: api.runtime.getURL(HOST + "?dapp=1"), type: "popup", width: W, height: H, focused: true, ...pos }).catch(() => null);
   openedWin = w ? w.id : null;
+  // The window could not open: the waiting requests are refused at once rather than left hanging (R5).
+  if (!w && !currentHost() && !starting.size) { opening = 0; for (const it of queue.splice(0)) if (it.reply) it.reply({ error: err(4001, "UP Wallet could not open its window.") }); }
 }
 api.windows.onRemoved.addListener((id) => {
   // The window opened for a request closed before its wallet took it: the waiting requests are refused.
@@ -241,7 +266,13 @@ api.runtime.onConnect.addListener((port) => {
     port.origin = s.origin;
     dappPorts.add(port);
     port.onMessage.addListener((m) => onDapp(port, m));
-    port.onDisconnect.addListener(() => dappPorts.delete(port));
+    // The site's page went (closed, reloaded, navigated): its open requests are dropped (R5). Its pings
+    // (ext/content.js, every 20 s while a call is open) keep this worker alive meanwhile (R2).
+    port.onDisconnect.addListener(() => {
+      dappPorts.delete(port);
+      for (const [n, f] of inflight) if (f.port === port) cancel(n, "The site's page closed.");
+      for (let i = queue.length - 1; i >= 0; i--) if (queue[i].port === port) queue.splice(i, 1);
+    });
     return;
   }
   if (port.name === "host") {

@@ -23,8 +23,16 @@
   const topicOf = (o) => "dapp:" + o;
   const originOf = (topic) => String(topic).replace(/^dapp:/, "");
   const hostOf = (o) => { try { return new URL(o).host; } catch (e) { return String(o); } };
-  const answer = (n, result) => bridge.call("dapp-answer", { n, result }).catch(() => null);
-  const refuse = (n, code, message) => bridge.call("dapp-answer", { n, error: { code, message: String(message || "error") } }).catch(() => null);
+  // One request at a time reaches the page, as WalletConnect's client hands them (review of 2026-11-24, R1): two
+  // requests of a site sent together would otherwise both pass the page's "one request open" check, the second
+  // replacing the first in the request window. The next one comes once the current one is answered or dropped.
+  const waiting = [];           // the sites' requests not yet given to the page, in order
+  let current = null;           // the one the page has: { n, origin, method }
+  const done = (n) => { if (current && current.n === n) { current = null; setTimeout(pump, 0); } };
+  const answer = (n, result) => { done(n); return bridge.call("dapp-answer", { n, result }).catch(() => null); };
+  const refuse = (n, code, message) => { done(n); return bridge.call("dapp-answer", { n, error: { code, message: String(message || "error") } }).catch(() => null); };
+  // For ext/device-key.js: the site's request being handled, whose number goes with its signature (R3).
+  Object.defineProperty(window, "__upwDappCurrent", { value: () => (current ? { n: current.n, method: current.method } : null), configurable: false, writable: false });
   const emit = (name, ev) => { for (const f of handlers[name] || []) { try { f(ev); } catch (e) { /* the page's own error */ } } };
   /* global compliance, getWalletKit, NETWORKS, log, applyI18n, I18N, PHONE_I18N */
   const pageLog = (text, cls) => { if (typeof log === "function") log(text, cls); };
@@ -124,9 +132,34 @@
     if (method === "wallet_switchEthereumChain") switching.add(n);
     emit("session_request", { topic, id: n, verifyContext, params: { request: { method, params }, chainId: s.namespaces.eip155.chains[0] } });
   }
+  function pump() {
+    if (!kitReady || current || !waiting.length) return;
+    current = waiting.shift();
+    deliver(current);
+  }
+  function enqueue(r) {
+    if (r.method === "upwallet_siteDisconnected") { deliver(r); return; }   // a notice: no answer, no turn
+    waiting.push(r);
+    pump();
+  }
+  // The site's page closed or the request expired (the service worker said so): dropped; the page's answer, if
+  // it comes, goes nowhere, and a signature for it is refused by the host.
+  bridge.on("dapp-cancel", (c) => {
+    if (!c || typeof c.n !== "number") return;
+    const i = waiting.findIndex((r) => r.n === c.n);
+    if (i >= 0) waiting.splice(i, 1);
+    proposals.delete(c.n); switching.delete(c.n);
+    if (current && current.n === c.n) {
+      // It stays the current one until the page answers it (the user rejects it, or a signature is refused):
+      // its number still goes with a signature, which the host then refuses, never one shown as the wallet's own.
+      current.cancelled = true;
+      pageLog(L(`${hostOf(current.origin)}: la richiesta non è più aperta (pagina del sito chiusa o richiesta scaduta). Non firmare: rifiutala.`,
+        `${hostOf(current.origin)}: the request is no longer open (the site's page closed or the request expired). Do not sign: reject it.`), "line-warn");
+    }
+  });
   bridge.on("dapp-request", (r) => {
     if (!r || typeof r.n !== "number") return;
-    if (kitReady) { deliver(r); return; }
+    if (kitReady) { enqueue(r); return; }
     // The page's checks are not set up yet (no UP or network chosen, or the check of panel 3 not green):
     // the request waits a minute for them.
     const item = { r, timer: setTimeout(() => {
@@ -150,7 +183,7 @@
       }
       await new Promise((ok) => setTimeout(ok, 500));
     }
-    for (const item of queue.splice(0)) { clearTimeout(item.timer); deliver(item.r); }
+    for (const item of queue.splice(0)) { clearTimeout(item.timer); enqueue(item.r); }
     renderSites();
   }
 
