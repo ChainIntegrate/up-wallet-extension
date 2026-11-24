@@ -137,6 +137,17 @@ async function signTyped(params) {
   const up = upEl && ethers.isAddress(upEl.value.trim()) ? ethers.getAddress(upEl.value.trim()) : null;
   return ask({ kind: "typed", account: a, data: typeof data === "string" ? data : JSON.stringify(data), chainId: n ? n.chainId : null, up, site: site() });
 }
+// The function signatures the wallet page knows for the calls of a request (up-wallet.html): the signing
+// window checks each against the data before it shows the call by name and arguments (sign-plan.js).
+async function withHints(req) {
+  try {
+    const f = window.__upwalletSignatureHints;
+    if (typeof f !== "function") return req;
+    const h = await Promise.race([f(req), new Promise((r) => setTimeout(() => r(null), 6000))]);
+    return h && typeof h === "object" ? { ...req, hints: h } : req;
+  } catch (e) { return req; }
+}
+const pageUp = () => { const el = $("upAddress"); return el && ethers.isAddress(el.value.trim()) ? ethers.getAddress(el.value.trim()) : null; };
 const big = (v) => (v === undefined || v === null || v === "" ? null : BigInt(v));
 async function sendTransaction(params) {
   const tx = (params || [])[0] || {};
@@ -156,7 +167,7 @@ async function sendTransaction(params) {
     fees = f.maxFeePerGas != null ? { type: 2, maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas ?? 0n } : { type: 0, gasPrice: f.gasPrice };
   }
   const str = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : v]));
-  const raw = await ask({ kind: "tx", tx: str({ ...base, nonce, gasLimit, chainId: net.chainId, ...fees }), net: { name: net.name, currency: net.currency || "" }, site: site() });
+  const raw = await ask(await withHints({ kind: "tx", tx: str({ ...base, nonce, gasLimit, chainId: net.chainId, ...fees }), up: pageUp(), net: { name: net.name, currency: net.currency || "" }, site: site() }));
   const t = ethers.Transaction.from(raw);
   if (t.from !== address || Number(t.chainId) !== net.chainId) throw rpcError(-32603, "signature check failed");
   return rpc.send("eth_sendRawTransaction", [raw]);
@@ -168,7 +179,7 @@ async function signUserOperation(params) {
   if (Number(chainId) !== net.chainId) throw rpcError(4901, `operation for chain ${Number(chainId)}, the page is on ${net.chainId}`);
   const upEl = $("upAddress");
   const up = upEl && ethers.isAddress(upEl.value.trim()) ? ethers.getAddress(upEl.value.trim()) : null;
-  return ask({ kind: "userop", op, entryPoint, chainId: net.chainId, up, net: { name: net.name, currency: net.currency || "" } });
+  return ask(await withHints({ kind: "userop", op, entryPoint, chainId: net.chainId, up, net: { name: net.name, currency: net.currency || "" } }));
 }
 
 // ---- the EIP-1193 provider

@@ -271,6 +271,20 @@ let named = null;   // the address whose name the mocked UP keeps
   const relay = await pr;
   ck("gas relay: the operation hash computed in the signing window, personal_sign by the computer key", ethers.isHexString(relay.sig, 65) && ethers.verifyMessage(ethers.getBytes(H), relay.sig) === addr, JSON.stringify(relay));
 
+  // page 0.14.4 / 0.2.8: a call the window does not decode by itself, described from the page's signature
+  // (checked against the data in the window): name and arguments, no warning; the unknown one still warned.
+  const vaultIface = new ethers.Interface(["function deposit(uint256 assets, address receiver)"]);
+  const batchIface = new ethers.Interface(["function executeBatch(uint256[],address[],uint256[],bytes[])"]);
+  const op2 = { ...ser, nonce: "4", callData: batchIface.encodeFunctionData("executeBatch", [[0, 0], [TO, TO], [0, 0], [vaultIface.encodeFunctionData("deposit", [5000n, UP]), "0xdeadbeef"]]) };
+  mark();
+  pr = f.evaluate(async ([o]) => { try { return await signerProvider.request({ method: "upwallet_signUserOperation", params: [{ op: o, entryPoint: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789", chainId: 8453 }] }); } catch (e) { return { code: e.code }; } }, [op2]);
+  txt = await shown();
+  ck("signature hints: a call known to the page shown by name and arguments, the UP named, no warning for it; one decoded by neither side warned",
+    /deposit \(nome dal wallet, verificato sui dati\)/.test(txt) && txt.includes(`receiver: ${UP} (la UP)`) && !/deposit.*⚠️|⚠️.*deposit/.test(txt) && (txt.match(/⚠️/g) || []).length === 1 && /0xdeadbeef su/.test(txt) && !/⛔/.test(txt), txt);
+  await click("#cancel");
+  r = await pr;
+  ck("signature hints: rejected, nothing signed", r && r.code === 4001, JSON.stringify(r));
+
   // ---- the key's own balance, sent to the UP
   await f.waitForFunction(() => /Saldo della chiave su Base: 0\.01 ETH/.test(document.getElementById("pkPanel").innerText), null, { timeout: 10000 }).catch(() => null);
   const balTxt = await f.$eval("#pkPanel", (e) => e.innerText);

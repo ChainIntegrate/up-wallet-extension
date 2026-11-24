@@ -13,6 +13,13 @@
 // `types`), only its typed fields, with warnings for permits, signed transfers and orders; the arguments of the
 // token calls the UP makes (transfers and approvals of ERC-20, LSP7, ERC-721, LSP8, ERC-1155, Permit2), with
 // "unlimited" approvals flagged; every call of a batch; a function this file does not know, said so.
+// From 0.2.8 / 0.10.3: the other calls are described from the function signatures the wallet page knows
+// (req.hints: selector -> signature, from its decoders and the explorer's verified ABIs). A signature is used
+// only if its selector is the call's and it decodes the call data exactly; then the call is shown by name and
+// arguments, with a warning only for what its content says (a permission, something sent to another address
+// than the UP). A signature that does not match the data is a red alert, as a DELEGATECALL of the UP, a change
+// of the UP's owner or of its controllers' permissions. A call neither side can decode stays a warning.
+// plan() also returns `danger`: the red alerts, shown before the warnings.
 import { ethers } from "ethers";
 
 const ENTRY_POINT = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
@@ -20,6 +27,8 @@ const PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3";
 const rpcError = (code, message) => ({ code, message });
 let lang = "en";
 const L = (it, eng) => (lang === "it" ? it : eng);
+// Per request (set by plan()): the page's hints, the UP, the red alerts.
+let HINTS = {}, UPADDR = null, DANGER = [];
 
 function messageBytes(m) { return typeof m === "string" && ethers.isHexString(m) ? ethers.getBytes(m) : ethers.toUtf8Bytes(String(m)); }
 const oneLine = (t, n) => { const c = String(t).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").trim(); return c.length > n ? c.slice(0, n - 1) + "…" : c; };
@@ -108,39 +117,127 @@ function tokenCall(to, data) {
   }
   return null;
 }
+// ---- the UP's own functions that change who controls it: red alerts.
+const LSP0_IFACE = new ethers.Interface([
+  "function setData(bytes32 dataKey, bytes dataValue)", "function setDataBatch(bytes32[] dataKeys, bytes[] dataValues)",
+  "function transferOwnership(address newOwner)", "function renounceOwnership()", "function acceptOwnership()",
+]);
+// LSP6 data keys: AddressPermissions[] (the controllers' list) and AddressPermissions:* (permissions, allowed calls, ...).
+const PERMISSION_KEY = (k) => { const x = String(k).toLowerCase(); return x.startsWith("0x4b80742de2bf") || x === "0xdf30dba06db6a30e65354d9a64c609861f089545ca58c6b4dbe31a5f338cb0e3"; };
+const isUp = (a) => UPADDR !== null && typeof a === "string" && ethers.isAddress(a) && ethers.getAddress(a) === UPADDR;
+// → rows for a call of the UP to itself (LSP20: a call to the UP's address runs on the UP), or null.
+function selfCall(to, data, cur, warnings, prefix) {
+  if (!isUp(to)) return null;
+  if ([UP_IFACE.getFunction("execute").selector, UP_IFACE.getFunction("executeBatch").selector].includes(selector(data))) return upCalls(data, cur, warnings, prefix);
+  return lsp0(data, prefix);
+}
+// → rows for the UP's setData / setDataBatch / ownership functions (with their red alerts), or null.
+function lsp0(data, prefix) {
+  let d = null;
+  try { d = LSP0_IFACE.parseTransaction({ data }); } catch (e) { return null; }
+  if (!d) return null;
+  if (d.name === "setData" || d.name === "setDataBatch") {
+    const keys = d.name === "setData" ? [d.args[0]] : [...d.args[0]];
+    if (keys.some(PERMISSION_KEY)) DANGER.push(L("Cambia i CONTROLLER della UP o i loro permessi: chi riceve un permesso può muovere i fondi della UP. Firma solo se sei tu a volerlo, da questo wallet.", "Changes the UP's CONTROLLERS or their permissions: whoever gets a permission can move the UP's funds. Sign only if you are doing this yourself, from this wallet."));
+    return [[prefix + L("Cosa fa", "What it does"), L(`Scrive ${keys.length} dato/i della UP (${d.name})`, `Writes ${keys.length} data key(s) of the UP (${d.name})`)], [prefix + L("Chiavi", "Keys"), keys.join("\n")]];
+  }
+  DANGER.push(L(`${d.name}: cambia il PROPRIETARIO della UP.`, `${d.name}: changes the OWNER of the UP.`));
+  return [[prefix + L("Cosa fa", "What it does"), d.name === "transferOwnership" ? L(`Passa la proprietà della UP a ${d.args[0]}`, `Hands the UP's ownership to ${d.args[0]}`) : d.name]];
+}
+
+// ---- other calls, from the signatures the wallet page knows (req.hints), checked here against the data.
+const APPROVAL = /approv|permit|allowance|authori[sz]e|operator|delegat/i;
+const RECIPIENT = /^_?(to|recipient|receiver|beneficiary|dst|destination|onbehalfof|onbehalf|account|user|owner|refund|refundaddress|refundto|refundrecipient|refundreceiver|newowner|newadmin|admin|spender)$/i;
+// A decoded value, one line (lists and tuples flattened, long bytes cut).
+function shown(v, t) {
+  if (t.baseType === "array" || t.baseType === "tuple") {
+    const items = [...v].slice(0, 8).map((x, i) => shown(x, t.baseType === "array" ? t.arrayChildren : t.components[i]));
+    return `[${items.join(", ")}${v.length > 8 ? `, … (${v.length})` : ""}]`;
+  }
+  if (t.type === "address") return isUp(v) ? `${v} (${L("la UP", "the UP")})` : String(v);
+  if (typeof v === "string" && ethers.isHexString(v) && v.length > 74) return `${v.slice(0, 66)}… (${ethers.dataLength(v)} byte)`;
+  return oneLine(String(v), 200);
+}
+// Addresses among the arguments (in tuples and lists too), with the parameter's name.
+function addressesOf(v, t, name, out) {
+  if (t.type === "address") out.push([name || t.name, v]);
+  else if (t.baseType === "array") [...v].forEach((x) => addressesOf(x, t.arrayChildren, name || t.name, out));
+  else if (t.baseType === "tuple") t.components.forEach((c, i) => addressesOf(v[i], c, c.name, out));
+}
+// → { rows } for a call described by a hint that matches the data; { mismatch } when the hint does not; null without one.
+function hinted(to, data, warnings, prefix) {
+  const sel = selector(data), sig = HINTS[sel];
+  if (typeof sig !== "string") return null;
+  let f = null;
+  try { f = ethers.FunctionFragment.from(sig.startsWith("function ") ? sig : "function " + sig); } catch (e) { return { mismatch: true }; }
+  if (f.selector !== sel) return { mismatch: true };
+  let args = null;
+  try { args = ethers.AbiCoder.defaultAbiCoder().decode(f.inputs, ethers.dataSlice(data, 4)); } catch (e) { return { mismatch: true }; }
+  // Exact: the arguments encoded again are the call data; extra bytes after them are said.
+  const enc = sel + ethers.AbiCoder.defaultAbiCoder().encode(f.inputs, args).slice(2);
+  const d = ethers.hexlify(data).toLowerCase();
+  if (!d.startsWith(enc.toLowerCase())) return { mismatch: true };
+  const extra = (d.length - enc.length) / 2;
+  const rows = [[prefix + L("Funzione", "Function"), L(`${f.name} (nome dal wallet, verificato sui dati)`, `${f.name} (name from the wallet, checked against the data)`)]];
+  const lines = f.inputs.map((p, i) => `${p.name || "#" + (i + 1)}: ${shown(args[i], p)}`);
+  if (lines.length) rows.push([prefix + L("Argomenti", "Arguments"), lines.join("\n")]);
+  if (extra > 0) {
+    rows.push([prefix + L("Dati in più", "Extra data"), `${extra} byte`]);
+    warnings.push(L(`${f.name}: ${extra} byte dopo gli argomenti (spesso un codice di riferimento del sito): il contratto può leggerli.`, `${f.name}: ${extra} bytes after the arguments (often the site's referral code): the contract may read them.`));
+  }
+  if (APPROVAL.test(f.name)) warnings.push(L(`${f.name} su ${to}: dà un PERMESSO (a spendere, a operare). Controlla a chi negli argomenti.`, `${f.name} on ${to}: grants a PERMISSION (to spend, to operate). Check to whom in the arguments.`));
+  if (UPADDR !== null) {
+    const found = [];
+    f.inputs.forEach((p, i) => addressesOf(args[i], p, p.name, found));
+    for (const [name, a] of found) if (RECIPIENT.test(name || "") && !isUp(a) && a !== ethers.ZeroAddress) warnings.push(L(`${f.name}: "${name}" è ${a}, non la UP. Controlla che sia giusto.`, `${f.name}: "${name}" is ${a}, not the UP. Check that it is right.`));
+  }
+  return { rows };
+}
 // One call (made by the UP, or by the key itself): rows saying what it does, warnings added to the list.
 function describeCall(to, value, data, cur, warnings, prefix = "") {
   const sel = selector(data);
   if (!sel) return [[prefix + L("Cosa fa", "What it does"), value > 0n ? L(`Invia ${amount(value, cur)} a ${to}`, `Sends ${amount(value, cur)} to ${to}`) : L(`Chiama ${to} senza dati`, `Calls ${to} with no data`)]];
+  const self = selfCall(to, data, cur, warnings, prefix);
+  if (self) return self;
   const t = tokenCall(to, data);
   if (t) { if (t.warn) warnings.push(t.warn); return [[prefix + L("Cosa fa", "What it does"), t.text]]; }
-  warnings.push(L(`Funzione ${sel} su ${to}: questa finestra non sa cosa fa. Firma solo se ti fidi del sito e hai controllato la richiesta nel wallet.`, `Function ${sel} on ${to}: this window does not know what it does. Sign only if you trust the site and checked the request in the wallet.`));
-  return [[prefix + L("Funzione", "Function"), L(`${sel}: SCONOSCIUTA a questa finestra`, `${sel}: UNKNOWN to this window`)]];
+  const h = hinted(to, data, warnings, prefix);
+  if (h && h.rows) return h.rows;
+  if (h && h.mismatch) {
+    DANGER.push(L(`Funzione ${sel} su ${to}: la descrizione data dal wallet NON corrisponde ai dati firmati. Non firmare.`, `Function ${sel} on ${to}: the description given by the wallet does NOT match the signed data. Do not sign.`));
+    return [[prefix + L("Funzione", "Function"), L(`${sel}: descrizione del wallet NON corrispondente`, `${sel}: the wallet's description does NOT match`)]];
+  }
+  warnings.push(L(`Funzione ${sel} su ${to}: né questa finestra né il wallet sanno decodificarla (il contratto non è verificato sull'explorer della rete). Firma solo se ti fidi del sito.`, `Function ${sel} on ${to}: neither this window nor the wallet can decode it (the contract is not verified on the network's explorer). Sign only if you trust the site.`));
+  return [[prefix + L("Funzione", "Function"), L(`${sel}: non decodificata`, `${sel}: not decoded`)]];
 }
 // What the UP does, from its execute / executeBatch call data: the operation type when it is not a plain call,
 // and each call's recipient, value and what it does. Every call of a batch is shown (EXT-03).
 const OPS = ["CALL", "CREATE", "CREATE2", "STATICCALL", "DELEGATECALL"];
 const opName = (o) => OPS[Number(o)] || String(o);
-function upCalls(data, cur, warnings) {
+function upCalls(data, cur, warnings, outer = "") {
   let d = null;
   try { d = UP_IFACE.parseTransaction({ data }); } catch (e) { /* not execute / executeBatch */ }
   if (!d) {
+    const own = lsp0(data, outer);
+    if (own) return own;
     warnings.push(L(`Funzione della UP ${selector(data) || "0x"}: non è execute né executeBatch.`, `UP function ${selector(data) || "0x"}: neither execute nor executeBatch.`));
-    return [[L("Funzione della UP", "UP function"), selector(data) || "0x"]];
+    return [[outer + L("Funzione della UP", "UP function"), selector(data) || "0x"]];
   }
   const one = (op, to, value, inner, prefix) => {
     const rows = [];
     if (Number(op)) {
       rows.push([prefix + L("Tipo", "Type"), opName(op)]);
-      warnings.push(L(`Operazione ${opName(op)} della UP: non è una semplice chiamata.`, `${opName(op)} operation of the UP: not a plain call.`));
+      // DELEGATECALL runs another contract's code as the UP itself: it can do anything with the UP.
+      if (opName(op) === "DELEGATECALL") DANGER.push(L(`DELEGATECALL della UP verso ${to}: quel codice agisce come la UP e può spostarne tutto o cambiarne i controller.`, `DELEGATECALL of the UP to ${to}: that code acts as the UP and can move everything or change its controllers.`));
+      else warnings.push(L(`Operazione ${opName(op)} della UP: non è una semplice chiamata.`, `${opName(op)} operation of the UP: not a plain call.`));
     }
     rows.push([prefix + L("Verso", "To"), to], [prefix + L("Valore", "Value"), amount(value, cur)], ...describeCall(to, value, inner, cur, warnings, prefix));
     return rows;
   };
-  if (d.name === "execute") { const [op, to, value, inner] = d.args; return one(op, to, value, inner, ""); }
+  if (d.name === "execute") { const [op, to, value, inner] = d.args; return one(op, to, value, inner, outer); }
   const [ops, tos, values, datas] = d.args;
-  const rows = [[L("Chiamate", "Calls"), L(`${tos.length} in un'operazione`, `${tos.length} in one operation`)]];
-  tos.forEach((to, i) => rows.push(...one(ops[i], to, values[i], datas[i], `${i + 1} · `)));
+  const rows = [[outer + L("Chiamate", "Calls"), L(`${tos.length} in un'operazione`, `${tos.length} in one operation`)]];
+  tos.forEach((to, i) => rows.push(...one(ops[i], to, values[i], datas[i], `${outer}${i + 1} · `)));
   return rows;
 }
 // A transaction to the UP's Key Manager: execute(bytes) runs the payload on the UP.
@@ -180,6 +277,13 @@ function typedPlan(req) {
 // address: the key's own address (checksummed); lang: "it" or "en".
 export function plan(req, address, language = "en") {
   lang = language === "it" ? "it" : "en";
+  DANGER = [];
+  UPADDR = req && typeof req.up === "string" && ethers.isAddress(req.up) ? ethers.getAddress(req.up) : null;
+  HINTS = {};
+  // At most 64 hints, each a selector and a signature of up to 1000 characters; anything else is ignored.
+  if (req && req.hints && typeof req.hints === "object") {
+    for (const [k, v] of Object.entries(req.hints).slice(0, 64)) if (/^0x[0-9a-f]{8}$/.test(k) && typeof v === "string" && v.length <= 1000) HINTS[k] = v;
+  }
   const k = { address: ethers.getAddress(address) };
   const who = (a) => typeof a === "string" && ethers.isAddress(a) && ethers.getAddress(a) === k.address;
   if (req.kind === "message") {
@@ -212,7 +316,7 @@ export function plan(req, address, language = "en") {
       if (t.to) what = [[L("Verso", "To"), t.to], [L("Valore", "Value"), amount(t.value, req.net.currency)], ...describeCall(t.to, t.value, t.data, req.net.currency, warnings)];
       else { what = [[L("Verso", "To"), L("(nuovo contratto)", "(new contract)")], [L("Valore", "Value"), amount(t.value, req.net.currency)]]; warnings.push(L("Crea un nuovo contratto.", "Deploys a new contract.")); }
     }
-    return { title: L(`Transazione su ${req.net.name}`, `Transaction on ${req.net.name}`), site: req.site, warnings,
+    return { title: L(`Transazione su ${req.net.name}`, `Transaction on ${req.net.name}`), site: req.site, warnings, danger: DANGER,
       rows: [...what,
         [L("Gas massimo", "Maximum gas"), amount(t.gasLimit * (t.maxFeePerGas ?? t.gasPrice ?? 0n), req.net.currency)], [L("Rete", "Network"), `${req.net.name} (${t.chainId})`]],
       digest: t.unsignedHash, finish: (sig) => { t.signature = sig; if (t.from !== k.address) throw new Error("signature check failed"); return t.serialized; } };
@@ -229,7 +333,7 @@ export function plan(req, address, language = "en") {
     const what = upCalls(op.callData, req.net.currency, warnings);
     const h = userOpHash(op, Number(req.chainId));
     // Extension4337 checks a personal_sign of the operation hash.
-    return { title: L(`Operazione della UP su ${req.net.name}`, `Operation of the UP on ${req.net.name}`), site: req.site, warnings,
+    return { title: L(`Operazione della UP su ${req.net.name}`, `Operation of the UP on ${req.net.name}`), site: req.site, warnings, danger: DANGER,
       rows: [["UP", op.sender], ...what, ["Gas", L("pagato dal sito (relayer)", "paid by the site (relayer)")], [L("Rete", "Network"), `${req.net.name} (${req.chainId})`]],
       digest: ethers.hashMessage(ethers.getBytes(h)), finish: (sig) => sig.serialized };
   }

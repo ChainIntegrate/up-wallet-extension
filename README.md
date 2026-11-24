@@ -5,7 +5,7 @@ extension: the wallet of a LUKSO Universal Profile on every network where it exi
 own key, so that the computer needs no MetaMask to use dApps. The Android app does the same on the phone
 ([up-wallet-android](https://github.com/ChainIntegrate/up-wallet-android)).
 
-**Status: phase 2, 0.2.7 (0.2.0: an injected wallet for the sites you connect, the wallet page isolated by the browser; 0.2.1: a new version announced in the wallet; 0.2.3: the signing window's EXT-02 and EXT-03; 0.2.2 and 0.2.4 to 0.2.7: fixes from live use, connecting from the side panel, Aave, the token lists); prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
+**Status: phase 2, 0.2.8 (0.2.0: an injected wallet for the sites you connect, the wallet page isolated by the browser; 0.2.1: a new version announced in the wallet; 0.2.3: the signing window's EXT-02 and EXT-03; 0.2.2 and 0.2.4 to 0.2.7: fixes from live use, connecting from the side panel, Aave, the token lists; 0.2.8: the signing window shows by name and arguments the calls the wallet page knows, checked against the data, and warns only from what they do); prototype (0.x).** Chrome, Edge and Brave (Chromium 121 or later).
 Firefox is not supported yet. Step 2 of Cross_Chain's roadmap.
 
 > **⚠️ Experimental: the maintainer's own wallet.** The extension keeps a signing key on this computer,
